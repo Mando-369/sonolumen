@@ -74,10 +74,11 @@ def test_drive_pa_slider_shifts_regime_classification():
     """
     base_payload = apply_preset("sbsl_canonical")
 
+    # ambient_p is now log₁₀(p_∞ in kPa). 2.005 ≈ log₁₀(101 kPa) ≈ 1 atm.
     # Build a control payload at 0.05 atm (well sub-Blake)
     low_payload = apply_controls(
         base_payload,
-        liquid_name="water", ambient_T=293, ambient_p=101,
+        liquid_name="water", ambient_T=293, ambient_p=2.005,
         drive_f_log10=1.42, drive_pa_atm=0.05, drive_cycles=8,
         bubble_R0_log10=0.65, gas_ar=0.99, gas_h2o=0.01, gas_air=0.0,
         phys_bubble_eq="keller_miksis", phys_thermal="toegel",
@@ -86,7 +87,7 @@ def test_drive_pa_slider_shifts_regime_classification():
     )
     high_payload = apply_controls(
         base_payload,
-        liquid_name="water", ambient_T=293, ambient_p=101,
+        liquid_name="water", ambient_T=293, ambient_p=2.005,
         drive_f_log10=1.42, drive_pa_atm=1.32, drive_cycles=8,
         bubble_R0_log10=0.65, gas_ar=0.99, gas_h2o=0.01, gas_air=0.0,
         phys_bubble_eq="keller_miksis", phys_thermal="toegel",

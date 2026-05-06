@@ -79,10 +79,12 @@ def apply_controls(
     except Exception:
         liquid = base.liquid
 
-    # Ambient
+    # Ambient — `ambient_p` slider is now log₁₀(p_∞ in kPa) so a single
+    # control covers vacuum (~30 kPa) → 10 km seawater (~100 MPa).
+    p_inf_pa = (10.0 ** float(ambient_p)) * 1_000.0
     ambient = dataclasses.replace(
         base.ambient,
-        p_inf=ambient_p * 1_000.0,    # kPa → Pa
+        p_inf=p_inf_pa,
         T_inf=ambient_T,
     )
 
@@ -184,10 +186,12 @@ def scenario_to_control_values(scenario: Scenario) -> dict:
         bubble_R0_log10 = 0.65
         gas = {}
 
+    # ambient_p slider is now log₁₀(p_∞ in kPa) — covers vacuum → Mariana.
+    p_inf_kpa = max(scenario.ambient.p_inf / 1_000.0, 1e-3)
     return {
         "liquid_dropdown":   scenario.liquid.name,
         "ambient_T":         scenario.ambient.T_inf,
-        "ambient_p":         scenario.ambient.p_inf / 1_000.0,
+        "ambient_p":         math.log10(p_inf_kpa),
         "drive_f":           drive_f_log10,
         "drive_pa":          drive_pa_atm,
         "drive_cycles":      drive_cycles,

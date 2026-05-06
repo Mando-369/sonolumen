@@ -113,14 +113,29 @@ def _liquid_controls() -> html.Div:
 
 
 def _ambient_controls() -> html.Div:
+    # `ambient_p` is stored as log₁₀(p_∞ in kPa). The conversion back to
+    # Pa happens in `apply_controls`. Range covers ~30 kPa (high-altitude
+    # / partial vacuum experiments) up to ~100 MPa (≈ 10 km seawater
+    # depth, Challenger Deep). Marks call out common operating regimes
+    # so the user has anchors when sweeping across depth.
     return html.Div([
         dbc.Label("T_∞ (K)"),
         dcc.Slider(id="ambient_T", min=273, max=323, value=293,
                    step=1, marks={273: "0 °C", 293: "20 °C", 323: "50 °C"}),
         html.Br(),
-        dbc.Label("p_∞ (kPa)"),
-        dcc.Slider(id="ambient_p", min=50, max=200, value=101,
-                   step=1, marks={50: "50", 101: "1 atm", 200: "200"}),
+        dbc.Label("p_∞ (log₁₀ kPa) — covers vacuum → Mariana"),
+        dcc.Slider(
+            id="ambient_p", min=1.5, max=5.0, value=2.005, step=0.025,
+            marks={
+                1.5:  "30 kPa",         # high altitude / partial vacuum
+                2.0:  "1 atm",          # sea surface
+                3.0:  "1 MPa",          # ≈ 90 m seawater
+                4.0:  "10 MPa",         # ≈ 1 km seawater
+                5.0:  "100 MPa",        # ≈ 10 km — Challenger Deep
+            },
+            tooltip={"placement": "bottom", "always_visible": False,
+                     "template": "log₁₀(kPa) = {value}"},
+        ),
     ])
 
 
