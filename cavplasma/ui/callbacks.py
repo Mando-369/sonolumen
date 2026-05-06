@@ -724,11 +724,19 @@ def register_callbacks(app: Any) -> None:
         return render_audio(result_payload)
 
     # ----------------------------------------------------------------------
-    # Animation: play / scrub / render. Three callbacks:
+    # Animation: play / scrub / render. Five callbacks:
     #   1. Toggle button → flip anim_state.playing
-    #   2. Tick interval → advance anim_state.frame + sync slider value
-    #   3. Slider drag_value → set anim_state.frame, pause autoplay
-    #   4. Render → field_fig + time readout from anim_state
+    #   2. Anim state → tick disabled + status pill
+    #   3. Tick interval → advance anim_state.frame (slider follows via #4)
+    #   4. anim_state.frame → time_slider.value (visual sync for play)
+    #   5. time_slider.value → anim_state.frame (user scrub; equality guard
+    #      breaks the loop with #4 since auto-sync writes value == frame)
+    #   6. Render → field_fig + time readout from anim_state
+    #
+    # The equality guard in #5 is what fixes the "play advances one frame
+    # and stops" bug: with updatemode="drag" the slider's value prop fires
+    # both on user drag *and* on programmatic auto-sync from #4. Without the
+    # guard, every tick would re-pause the animation from the scrub path.
     # ----------------------------------------------------------------------
     @app.callback(
         Output("anim_state", "data"),
@@ -755,7 +763,6 @@ def register_callbacks(app: Any) -> None:
 
     @app.callback(
         Output("anim_state", "data", allow_duplicate=True),
-        Output("time_slider", "value"),
         Input("animation_tick", "n_intervals"),
         State("anim_state", "data"),
         prevent_initial_call=True,
@@ -763,23 +770,38 @@ def register_callbacks(app: Any) -> None:
     def _tick(n_intervals, state):                                      # noqa: ANN001
         from cavplasma.ui.style import ANIMATION_FRAME_BUDGET
         if not (state or {}).get("playing", False):
-            return no_update, no_update
+            return no_update
         next_frame = ((state or {}).get("frame", 0) + 1) % ANIMATION_FRAME_BUDGET
-        return ({"playing": True, "frame": next_frame}, next_frame)
+        return {"playing": True, "frame": next_frame}
+
+    @app.callback(
+        Output("time_slider", "value"),
+        Input("anim_state", "data"),
+    )
+    def _sync_slider(state):                                            # noqa: ANN001
+        # Mirror anim_state.frame → slider position. The follow-up
+        # `_scrub` callback's equality guard ensures this auto-sync
+        # is treated as a no-op (not a user scrub).
+        return int((state or {}).get("frame", 0))
 
     @app.callback(
         Output("anim_state", "data", allow_duplicate=True),
         Output("anim_toggle", "children", allow_duplicate=True),
-        Input("time_slider", "drag_value"),
+        Input("time_slider", "value"),
         State("anim_state", "data"),
         prevent_initial_call=True,
     )
-    def _scrub_drag(drag_value, state):                                 # noqa: ANN001
-        # `drag_value` only fires on user interaction; programmatic
-        # `time_slider.value` updates from `_tick` don't trigger this.
-        if drag_value is None:
+    def _scrub(slider_value, state):                                    # noqa: ANN001
+        # Distinguish user-drag from programmatic auto-sync (#4 above):
+        # if the slider's value already matches anim_state.frame, this
+        # firing was caused by `_sync_slider` mirroring anim_state, not
+        # by the user. In that case, no_update breaks the loop.
+        if slider_value is None:
             return no_update, no_update
-        return ({"playing": False, "frame": int(drag_value)}, "▶ Play")
+        current_frame = int((state or {}).get("frame", 0))
+        if int(slider_value) == current_frame:
+            return no_update, no_update
+        return ({"playing": False, "frame": int(slider_value)}, "▶ Play")
 
     @app.callback(
         Output("field_fig", "figure", allow_duplicate=True),

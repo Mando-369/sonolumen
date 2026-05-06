@@ -483,18 +483,52 @@ def standing_wave_field_figure(
         scenario.bubble_population.seed_position or (0.0, 0.0, 0.0),
         chamber,
     )
+    # Distinguish two zero-drive cases for a clearer message: an impulsive
+    # population (e.g. pistol_shrimp_event has no transducers / no drive
+    # waveforms — there is nothing to animate, by design) vs. a transducer
+    # exists but its amplitude has been zeroed.
+    has_waveforms = bool(scenario.drive.waveforms)
+    has_transducers = bool(scenario.transducers)
     if drv.P_A == 0.0:
-        grid = np.where(np.isnan(spatial), np.nan, 0.0)
-        fig = go.Figure(go.Heatmap(
-            x=xs, y=ys, z=grid,
-            colorscale="RdBu", zmid=0.0,
+        if not has_transducers and not has_waveforms:
+            note = ("Impulsive event — no acoustic drive. "
+                    "The bubble collapses under ambient pressure; "
+                    "there is no standing wave to animate.")
+        elif not has_transducers:
+            note = ("Drive waveform present but no transducer is defined. "
+                    "Add a transducer in the scenario to apply the drive.")
+        elif not has_waveforms:
+            note = ("Transducer present but no drive waveform. "
+                    "Set Drive amplitude > 0 atm and reload.")
+        else:
+            note = ("Drive amplitude is 0 atm — increase it on the "
+                    "Drive control to see the standing-wave field.")
+        # Show the chamber outline + a centred note. No heatmap needed.
+        theta = np.linspace(0.0, 2.0 * math.pi, 200)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=R * np.cos(theta), y=R * np.sin(theta),
+            mode="lines",
+            line=dict(color="#cccccc", width=2),
+            hoverinfo="skip", showlegend=False, name="chamber",
         ))
         fig.update_layout(
             title="Pressure field (no drive)",
             template=PLOT_TEMPLATE, height=PLOT_HEIGHT_MED,
-            xaxis=dict(scaleanchor="y", scaleratio=1, title="x (m)"),
-            yaxis=dict(title="y (m)"),
+            xaxis=dict(scaleanchor="y", scaleratio=1, title="x (m)",
+                       range=[-1.05 * R, 1.05 * R]),
+            yaxis=dict(title="y (m)", range=[-1.05 * R, 1.05 * R]),
             margin=dict(l=50, r=20, t=40, b=40),
+            annotations=[dict(
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                text=note,
+                showarrow=False,
+                font=dict(size=11, color="#93a1a1"),
+                bgcolor="rgba(7, 54, 66, 0.85)",
+                bordercolor="#586e75",
+                borderwidth=1, borderpad=8,
+                align="center",
+            )],
         )
         return fig
 
