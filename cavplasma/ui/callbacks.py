@@ -751,34 +751,90 @@ def register_callbacks(app: Any) -> None:
         kwargs = dict(zip(keys, args[:-1]))
         return apply_controls(scenario_payload, **kwargs)
 
-    # TEST button → run + cache + populate result_store
+    # TEST button → run + cache + populate result_store. Also hides the
+    # progress bar on completion. The clientside callback below shows
+    # the bar immediately on press (so the user gets instant feedback),
+    # and we hide it here when the run actually returns.
     @app.callback(
         Output("result_store", "data"),
         Output("run_status", "children"),
+        Output("run_progress_container", "style", allow_duplicate=True),
+        Output("run_elapsed_tick", "disabled", allow_duplicate=True),
         Input("run_button", "n_clicks"),
         State("scenario_store", "data"),
         prevent_initial_call=True,
     )
     def _run(n_clicks, scenario_payload):                                # noqa: ANN001
+        hide_progress = {"display": "none", "marginTop": "8px"}
         if not n_clicks:
-            return no_update, no_update
+            return no_update, no_update, no_update, no_update
         # Live run that also caches the dense ScenarioResult server-side
         s = scenario_from_store(scenario_payload)
         if s is None:
-            return None, "no scenario"
+            return None, "no scenario", hide_progress, True
         t0 = time.time()
         try:
             result = s.run()
         except ValueError as exc:
-            return None, f"validate() blocked: {exc}"
+            return (None, f"validate() blocked: {exc}",
+                    hide_progress, True)
         except Exception as exc:                                         # noqa: BLE001
-            return None, f"run failed: {type(exc).__name__}: {exc}"
+            return (None, f"run failed: {type(exc).__name__}: {exc}",
+                    hide_progress, True)
         elapsed = time.time() - t0
         cache_latest_result(result)
         payload = result_to_store(result)
         payload["wall_clock_s"] = elapsed
         payload["timestamp"] = datetime.now(timezone.utc).isoformat()
-        return payload, f"ran in {elapsed:.2f} s"
+        return (payload, f"ran in {elapsed:.2f} s",
+                hide_progress, True)
+
+    # Clientside: show the progress bar + start the elapsed-time interval
+    # the moment the user clicks TEST. Done clientside so the visual
+    # feedback is instantaneous (no round-trip to the server).
+    app.clientside_callback(
+        """
+        function(n_clicks) {
+            if (n_clicks) {
+                return [
+                    {display: 'block', marginTop: '8px'},
+                    false,
+                    Date.now()
+                ];
+            }
+            return [
+                {display: 'none', marginTop: '8px'},
+                true,
+                null
+            ];
+        }
+        """,
+        Output("run_progress_container", "style"),
+        Output("run_elapsed_tick", "disabled"),
+        Output("run_started_at", "data"),
+        Input("run_button", "n_clicks"),
+        prevent_initial_call=True,
+    )
+
+    # Clientside: tick the elapsed-time label inside the progress bar so
+    # the user can see seconds advancing during a long run. Computed
+    # purely from the timestamp set on click — no need to round-trip
+    # state through the server.
+    app.clientside_callback(
+        """
+        function(n_intervals, started_at) {
+            if (!started_at) {
+                return 'Running…';
+            }
+            const elapsed = (Date.now() - started_at) / 1000.0;
+            return 'Running… ' + elapsed.toFixed(1) + ' s';
+        }
+        """,
+        Output("run_progress_bar", "label"),
+        Input("run_elapsed_tick", "n_intervals"),
+        State("run_started_at", "data"),
+        prevent_initial_call=True,
+    )
 
     # Render figures from stores
     @app.callback(

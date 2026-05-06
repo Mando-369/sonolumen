@@ -60,7 +60,45 @@ def controls_panel() -> dbc.Card:
                     html.Br(),
                     dbc.Button("TEST  ▶", id="run_button", color="primary",
                                size="lg", className="w-100"),
-                    html.Div(id="run_status", className="text-muted small mt-2"),
+                    # Animated progress bar — shown immediately on click via
+                    # a clientside callback (so the user knows the press
+                    # registered), hidden by the run callback when complete.
+                    # Combined with `run_elapsed_tick` below, the label text
+                    # also counts elapsed seconds so the user can tell whether
+                    # a run is actually progressing or stuck.
+                    html.Div(
+                        id="run_progress_container",
+                        style={"display": "none", "marginTop": "8px"},
+                        children=[
+                            dbc.Progress(
+                                id="run_progress_bar",
+                                value=100,
+                                animated=True,
+                                striped=True,
+                                color="info",
+                                label="Running…",
+                                style={"height": "22px",
+                                       "fontSize": "0.85em"},
+                            ),
+                        ],
+                    ),
+                    # dcc.Loading wraps the status row — shows a spinner
+                    # over the result while the run callback is in flight.
+                    dcc.Loading(
+                        id="run_loading",
+                        type="default",
+                        color="#268bd2",   # solarized blue, matches button
+                        children=[
+                            html.Div(id="run_status",
+                                     className="text-muted small mt-2"),
+                        ],
+                    ),
+                    # 250-ms tick driving the elapsed-time label inside the
+                    # progress bar. Starts/stops based on run_progress_container
+                    # display style so it idles when no run is active.
+                    dcc.Interval(id="run_elapsed_tick",
+                                 interval=250, disabled=True),
+                    dcc.Store(id="run_started_at", data=None),
                     html.Hr(),
                     dbc.Row([
                         dbc.Col(
