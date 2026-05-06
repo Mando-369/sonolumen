@@ -1368,59 +1368,148 @@ def register_callbacks(app: Any) -> None:
                           style={"fontSize": "0.85em"})
 
     # ----------------------------------------------------------------------
-    # Auto-adapt — couple drive_f ↔ R₀ via the Minnaert relation. When
-    # the toggle is on, moving one of them updates the other to maintain
-    # `drive/Minnaert = 0.033` (SBSL canonical value). drive_pa is not
-    # coupled — user controls it independently. Equality guard breaks
-    # the loop (writing the same value as state → no_update).
+    # Auto-adapt as a *proposal* — moving a slider doesn't move its
+    # partner; instead it writes a payload to coupling_proposal that
+    # the user can Apply (commit) or Dismiss (cancel). Avoids surprise
+    # jumps and gives the user authority over every parameter change.
     # ----------------------------------------------------------------------
     @app.callback(
-        Output("drive_f", "value", allow_duplicate=True),
-        Output("bubble_R0", "value", allow_duplicate=True),
+        Output("coupling_proposal", "data"),
         Input("drive_f", "value"),
         Input("bubble_R0", "value"),
-        State("couple_sliders_toggle", "value"),
+        Input("couple_sliders_toggle", "value"),
         State("ambient_p", "value"),
         State("liquid_dropdown", "value"),
         prevent_initial_call=True,
     )
-    def _couple_sliders(f_log10, R0_log10, couple_on,                    # noqa: ANN001
+    def _propose_couple(f_log10, R0_log10, couple_on,                    # noqa: ANN001
                           p_log10, liquid_name):
         import math
         if not couple_on:
-            return no_update, no_update
+            return None        # toggle off → clear any pending proposal
         triggered = ctx.triggered_id
+        if triggered == "couple_sliders_toggle":
+            # Toggle just turned on; wait for an actual slider move.
+            return None
         if triggered not in ("drive_f", "bubble_R0"):
-            return no_update, no_update
+            return no_update
+        if any(v is None for v in (f_log10, R0_log10, p_log10)):
+            return None
+
         f_hz = (10.0 ** float(f_log10)) * 1000.0
         R0_m = (10.0 ** float(R0_log10)) * 1e-6
         p_atm = (10.0 ** float(p_log10)) * 1000.0 / 101_325.0
-        # Liquid lookup for ρ — fallback to water.
         try:
             from cavplasma.liquids import preset
             liq = preset(liquid_name or "water")
         except Exception:                                                # noqa: BLE001
             from cavplasma.liquids import preset
             liq = preset("water")
-        gamma = 5.0 / 3.0      # assume monatomic-Ar SBSL gas
+        gamma = 5.0 / 3.0
 
         new_f_hz, new_R0_m = _adapt_partner_slider(
             triggered, f_hz, drive_pa_atm=0.0,
             R0_m=R0_m, p_inf_atm=p_atm, gamma=gamma, rho=liq.rho,
         )
-        new_f_log10 = no_update
-        new_R0_log10 = no_update
-        if new_f_hz is not None and new_f_hz > 0:
-            candidate = math.log10(new_f_hz / 1000.0)
-            # Equality guard — break loops when the adapted value
-            # matches what the slider already shows.
-            if abs(candidate - float(f_log10)) > 0.01:
-                new_f_log10 = round(candidate, 3)
-        if new_R0_m is not None and new_R0_m > 0:
-            candidate = math.log10(new_R0_m * 1e6)
-            if abs(candidate - float(R0_log10)) > 0.01:
-                new_R0_log10 = round(candidate, 3)
-        return new_f_log10, new_R0_log10
+
+        # Build the proposal only when the partner would move by >1 %
+        # in log-space (and >5 % in absolute terms). Below that, we
+        # don't bother the user.
+        if triggered == "drive_f" and new_R0_m is not None and new_R0_m > 0:
+            candidate_log10 = math.log10(new_R0_m * 1e6)
+            log_delta = abs(candidate_log10 - float(R0_log10))
+            abs_delta = abs(new_R0_m - R0_m) / R0_m
+            if log_delta > 0.01 and abs_delta > 0.05:
+                return {
+                    "target": "bubble_R0",
+                    "current_log10": float(R0_log10),
+                    "proposed_log10": round(candidate_log10, 3),
+                    "current_um": R0_m * 1e6,
+                    "proposed_um": new_R0_m * 1e6,
+                    "rationale": (f"keeps drive/Minnaert ratio at the SBSL "
+                                  f"canonical 0.033 for the new drive freq "
+                                  f"{f_hz/1000:.1f} kHz"),
+                }
+        if triggered == "bubble_R0" and new_f_hz is not None and new_f_hz > 0:
+            candidate_log10 = math.log10(new_f_hz / 1000.0)
+            log_delta = abs(candidate_log10 - float(f_log10))
+            abs_delta = abs(new_f_hz - f_hz) / f_hz
+            if log_delta > 0.01 and abs_delta > 0.05:
+                return {
+                    "target": "drive_f",
+                    "current_log10": float(f_log10),
+                    "proposed_log10": round(candidate_log10, 3),
+                    "current_kHz": f_hz / 1000.0,
+                    "proposed_kHz": new_f_hz / 1000.0,
+                    "rationale": (f"keeps drive/Minnaert ratio at the SBSL "
+                                  f"canonical 0.033 for the new R₀ "
+                                  f"{R0_m*1e6:.2f} µm"),
+                }
+        return None        # no meaningful adaptation needed
+
+    @app.callback(
+        Output("couple_proposal_card", "style"),
+        Output("couple_proposal_text", "children"),
+        Input("coupling_proposal", "data"),
+    )
+    def _render_proposal(proposal):                                      # noqa: ANN001
+        if not proposal:
+            return {"display": "none"}, no_update
+        target = proposal.get("target")
+        if target == "drive_f":
+            cur = proposal["current_kHz"]
+            new = proposal["proposed_kHz"]
+            text = html.Div([
+                html.Span("🎯 ", style={"fontSize": "1.1em"}),
+                html.B("Auto-adapt suggestion: drive frequency"), html.Br(),
+                html.Span(f"{cur:.2f} kHz → {new:.2f} kHz",
+                            className="text-info"), html.Br(),
+                html.Small(proposal.get("rationale", ""),
+                           style={"opacity": 0.85}),
+            ])
+        elif target == "bubble_R0":
+            cur = proposal["current_um"]
+            new = proposal["proposed_um"]
+            text = html.Div([
+                html.Span("🎯 ", style={"fontSize": "1.1em"}),
+                html.B("Auto-adapt suggestion: R₀"), html.Br(),
+                html.Span(f"{cur:.2f} µm → {new:.2f} µm",
+                            className="text-info"), html.Br(),
+                html.Small(proposal.get("rationale", ""),
+                           style={"opacity": 0.85}),
+            ])
+        else:
+            return {"display": "none"}, no_update
+        return {"display": "block"}, text
+
+    @app.callback(
+        Output("drive_f", "value", allow_duplicate=True),
+        Output("bubble_R0", "value", allow_duplicate=True),
+        Output("coupling_proposal", "data", allow_duplicate=True),
+        Input("couple_apply_btn", "n_clicks"),
+        State("coupling_proposal", "data"),
+        prevent_initial_call=True,
+    )
+    def _apply_proposal(n_clicks, proposal):                              # noqa: ANN001
+        if not n_clicks or not proposal:
+            return no_update, no_update, no_update
+        target = proposal.get("target")
+        proposed = proposal.get("proposed_log10")
+        if target == "drive_f":
+            return proposed, no_update, None
+        if target == "bubble_R0":
+            return no_update, proposed, None
+        return no_update, no_update, no_update
+
+    @app.callback(
+        Output("coupling_proposal", "data", allow_duplicate=True),
+        Input("couple_dismiss_btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _dismiss_proposal(n_clicks):                                      # noqa: ANN001
+        if not n_clicks:
+            return no_update
+        return None
 
     # Save / Load
     @app.callback(

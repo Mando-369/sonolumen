@@ -315,12 +315,15 @@ def _autodesign_controls() -> html.Div:
                   className="small mt-2",
                   style={"fontSize": "0.85em"}),
         html.Hr(),
-        # Live coupling — one slider drives, others adapt.
+        # Live coupling — one slider drives, the system *proposes*
+        # adapted partners. User accepts or dismisses; sliders only
+        # change on Apply. Avoids surprise jumps.
         dbc.Switch(id="couple_sliders_toggle", value=False,
-                   label="Auto-adapt: couple drive freq / R₀ / P_A"),
+                   label="Auto-adapt: propose coupled drive freq / R₀"),
         html.Div(
-            "When ON, moving one slider auto-adjusts the others to track "
-            "the SBSL ridge. Warns if the config falls outside a useful range.",
+            "When ON, moving one slider previews the partner value "
+            "needed to track the SBSL ridge. Sliders only change when "
+            "you click Apply.",
             className="text-muted small mt-1",
             style={"fontSize": "0.78em"},
         ),
@@ -328,6 +331,37 @@ def _autodesign_controls() -> html.Div:
         # configuration's predicted regime, updated live as any of the
         # three physics sliders moves (regardless of toggle state).
         html.Div(id="couple_status_chip", className="mt-2"),
+        # Proposal preview — shown only when the auto-adapt toggle is
+        # on AND moving a slider would shift its partner by > 1 % in
+        # log-space. Two buttons: Apply (push the proposed value into
+        # the partner slider, write to scenario_store) and Dismiss
+        # (clear the proposal, leave sliders alone).
+        dbc.Card(
+            id="couple_proposal_card",
+            style={"display": "none"},
+            color="info",
+            outline=True,
+            className="mt-2",
+            children=dbc.CardBody([
+                html.Div(id="couple_proposal_text",
+                          style={"fontSize": "0.88em"}),
+                dbc.Row([
+                    dbc.Col(dbc.Button(
+                        "Apply", id="couple_apply_btn",
+                        color="info", size="sm", className="w-100"),
+                        width=6),
+                    dbc.Col(dbc.Button(
+                        "Dismiss", id="couple_dismiss_btn",
+                        color="secondary", outline=True, size="sm",
+                        className="w-100"),
+                        width=6),
+                ], className="g-2 mt-2"),
+            ], className="py-2"),
+        ),
+        # State store — holds the pending proposal payload between the
+        # _propose_couple callback (writes) and the _apply / _dismiss
+        # callbacks (reads + clears).
+        dcc.Store(id="coupling_proposal", data=None),
     ])
 
 
