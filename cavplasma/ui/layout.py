@@ -328,6 +328,12 @@ def notebook_panel() -> dbc.Card:
         [
             dbc.CardHeader(html.B("Lab notebook")),
             dbc.CardBody([
+                # Regime-history strip — one coloured tile per run, in
+                # chronological order, so a parameter sweep visually
+                # shows the sequence of regimes (sub_blake → linear →
+                # stable → marginal → unstable). Hover gives the entry
+                # number + regime label.
+                html.Div(id="notebook_regime_strip", className="mb-2"),
                 html.Div(id="notebook_table"),
                 html.Br(),
                 dbc.Row([

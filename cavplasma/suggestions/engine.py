@@ -78,6 +78,11 @@ class SuggestionsReport:
     """§14.7 — output bundle returned by SuggestionsEngine.analyze()."""
     regime: RegimeLabel
     regime_internal: str
+    # Step-by-step audit trail explaining why `regime` was assigned.
+    # Each entry is (check_name, status, detail). Status ∈ {"FIRED",
+    # "PASS", "SKIP"}. The first FIRED entry is the rule that decided
+    # the label. UI renders this under the regime card.
+    regime_rationale: list = field(default_factory=list)
     suggestions: list[Suggestion] = field(default_factory=list)
     caveats: list[Suggestion] = field(default_factory=list)
     next_experiment: Optional[Suggestion] = None
@@ -101,7 +106,8 @@ class SuggestionsEngine:
         sweep is *not* run here — call `suggest_next_experiment(...)`
         explicitly when needed.
         """
-        regime, regime_internal = regime_mod.classify(self.scenario, self.result)
+        regime, regime_internal, rationale = regime_mod.classify_with_rationale(
+            self.scenario, self.result)
 
         suggestions: list[Suggestion] = []
         for rule in ALL_RULES:
@@ -135,6 +141,7 @@ class SuggestionsEngine:
         return SuggestionsReport(
             regime=regime,
             regime_internal=regime_internal,
+            regime_rationale=rationale,
             suggestions=suggestions,
             caveats=caveats,
             next_experiment=None,

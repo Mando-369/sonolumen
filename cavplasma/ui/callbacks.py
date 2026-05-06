@@ -270,11 +270,12 @@ def render_figures(
     return out
 
 
-def render_regime_card(result_payload: Optional[dict]) -> dbc.Alert:
+def render_regime_card(result_payload: Optional[dict]) -> Any:
     if not result_payload:
         return dbc.Alert("No run yet — click TEST to populate.",
                          color="secondary")
-    regime = result_payload.get("summary", {}).get("regime", "stable_spherical")
+    summary = result_payload.get("summary", {})
+    regime = summary.get("regime", "stable_spherical")
     color = {
         "stable_spherical":   "success",
         "marginal":           "warning",
@@ -284,7 +285,54 @@ def render_regime_card(result_payload: Optional[dict]) -> dbc.Alert:
         "transducer_limited": "danger",
     }.get(regime, "info")
     desc = REGIME_DESCRIPTION.get(regime, "")
-    return dbc.Alert([html.B(regime), html.Br(), desc], color=color)
+    rationale = summary.get("regime_rationale") or []
+
+    # Build the audit-trail expandable. Each entry is [name, status, detail].
+    # FIRED is the rule that picked the label; PASS rules are why earlier
+    # checks didn't match. We render FIRED in bold + the regime colour
+    # and PASS muted; SKIP italicised.
+    audit_rows = []
+    for entry in rationale:
+        if not entry or len(entry) < 3:
+            continue
+        name, status, detail = entry[0], entry[1], entry[2]
+        if status == "FIRED":
+            badge_color = {"FIRED": color}.get(status, "secondary")
+            audit_rows.append(html.Div([
+                dbc.Badge(status, color=badge_color, className="me-2"),
+                html.B(name), html.Span(" — "), html.Span(detail),
+            ], className="mb-1"))
+        elif status == "PASS":
+            audit_rows.append(html.Div([
+                dbc.Badge(status, color="secondary",
+                          className="me-2", style={"opacity": 0.6}),
+                html.Span(name, style={"opacity": 0.7}),
+                html.Span(" — ", style={"opacity": 0.7}),
+                html.Small(detail, style={"opacity": 0.7}),
+            ], className="mb-1"))
+        else:  # SKIP
+            audit_rows.append(html.Div([
+                dbc.Badge(status, color="light", text_color="muted",
+                          className="me-2"),
+                html.Em(name, style={"opacity": 0.5}),
+                html.Em(" — " + detail, style={"opacity": 0.5}),
+            ], className="mb-1"))
+
+    audit_block = []
+    if audit_rows:
+        audit_block = [
+            html.Hr(className="my-2"),
+            html.Details([
+                html.Summary("why this regime?",
+                             style={"cursor": "pointer", "fontSize": "0.85em"}),
+                html.Div(audit_rows, className="mt-2", style={"fontSize": "0.8em"}),
+            ]),
+        ]
+
+    return dbc.Alert(
+        [html.B(regime), html.Br(), desc] + audit_block,
+        color=color,
+    )
 
 
 def render_headline_table(result_payload: Optional[dict]) -> list:
@@ -459,6 +507,57 @@ def append_notebook(
     if len(new_notebook) > NOTEBOOK_MAX_ENTRIES:
         new_notebook = new_notebook[-NOTEBOOK_MAX_ENTRIES:]
     return new_notebook
+
+
+def render_notebook_regime_strip(notebook: list) -> Any:
+    """Build a horizontal strip of coloured tiles, one per notebook entry.
+
+    Each tile is coloured by the run's regime (REGIME_COLOR) and tooltipped
+    with the entry index + regime + key headline numbers. Pattern-finding
+    sweeps look like a banded rainbow: sub_blake (grey) → linear_oscillation
+    (yellow) → stable_spherical (green) → marginal (amber) → unstable_likely
+    (red). Spotting the green band is the goal.
+    """
+    if not notebook:
+        return html.Em("No runs yet — TEST a scenario to begin.",
+                        style={"opacity": 0.5, "fontSize": "0.85em"})
+    tiles = []
+    for i, entry in enumerate(notebook):
+        regime = entry.get("regime", "") or "unknown"
+        color = REGIME_COLOR.get(regime, "#444")
+        tooltip = (f"#{i+1}  {regime}\n"
+                    f"T_peak = {entry.get('T_peak_K', 0):.0f} K\n"
+                    f"R_max = {entry.get('R_max_um', 0):.1f} µm\n"
+                    f"Mach = {entry.get('wall_mach', 0):.3f}\n"
+                    f"photons = {entry.get('photons_4pi', 0):.1e}")
+        tiles.append(html.Div(
+            "",
+            title=tooltip,
+            style={
+                "backgroundColor": color,
+                "minWidth": "16px",
+                "height": "24px",
+                "borderRight": "1px solid #002b36",
+                "flex": "1",
+                "cursor": "help",
+            },
+        ))
+    return html.Div([
+        html.Small("regime history (oldest → newest)",
+                   className="text-muted",
+                   style={"fontSize": "0.75em"}),
+        html.Div(
+            tiles,
+            style={
+                "display": "flex",
+                "flexDirection": "row",
+                "border": "1px solid #586e75",
+                "borderRadius": "3px",
+                "overflow": "hidden",
+                "marginTop": "2px",
+            },
+        ),
+    ])
 
 
 def render_notebook_table(notebook: list) -> Any:
@@ -834,10 +933,14 @@ def register_callbacks(app: Any) -> None:
 
     @app.callback(
         Output("notebook_table", "children"),
+        Output("notebook_regime_strip", "children"),
         Input("notebook_store", "data"),
     )
     def _render_notebook(notebook):                                     # noqa: ANN001
-        return render_notebook_table(notebook or [])
+        return (
+            render_notebook_table(notebook or []),
+            render_notebook_regime_strip(notebook or []),
+        )
 
     @app.callback(
         Output("notebook_export_download", "data"),

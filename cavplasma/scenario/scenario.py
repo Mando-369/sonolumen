@@ -303,29 +303,54 @@ class Scenario:
 # §12.6 validate() implementations
 # ---------------------------------------------------------------------------
 def _check_off_resonance(s: Scenario) -> list[Warning]:
+    """Check whether the drive frequency lies inside *any* chamber mode's
+    Q-bandwidth.
+
+    The previous version only compared against the geometric fundamental,
+    which falsely flagged drives intended for the n=2/3 radial harmonic
+    (a common SBSL configuration: 26.5 kHz drive on a 5 cm sphere whose
+    fundamental is 15.3 kHz, exciting the 2nd radial mode). The check
+    now scans the first 4 modes and reports the closest one. The drive
+    is "off-resonance" only if it's outside the bandwidth of every mode.
+    """
     drv = combine_drives(s.transducers, s.drive, s._bubble_position(), s.chamber)
     if drv.P_A <= 0.0:
         return []
     f_drive = drv.f
-    f_eigen = _chamber_fundamental_freq(s.chamber, s.liquid)
-    if f_eigen <= 0.0:
+    modes = _chamber_resonant_modes(s.chamber, s.liquid, max_n=4)
+    if not modes:
         return []
-    bandwidth = f_eigen / max(s.chamber.Q, 1.0)
-    if abs(f_drive - f_eigen) > bandwidth:
-        return [Warning(
-            category="off_resonance",
-            severity="warning",
-            message=(
-                f"drive frequency {f_drive:.0f} Hz is outside the chamber "
-                f"Q-bandwidth (±{bandwidth:.1f} Hz around {f_eigen:.0f} Hz). "
-                "Expect 10-100× reduced effective P_A in chamber."
-            ),
-            actionable_fix=(
-                f"set drive.waveforms[*].f to {f_eigen:.0f} Hz "
-                "or reduce chamber.Q to widen the band."
-            ),
-        )]
-    return []
+
+    Q = max(s.chamber.Q, 1.0)
+    closest_idx = min(range(len(modes)), key=lambda i: abs(modes[i] - f_drive))
+    f_closest = modes[closest_idx]
+    bandwidth_closest = f_closest / Q
+
+    # If we're inside any mode's bandwidth, no warning.
+    in_band = any(abs(f_drive - f_n) <= (f_n / Q) for f_n in modes)
+    if in_band:
+        return []
+
+    delta = f_drive - f_closest
+    n_label = closest_idx + 1
+    mode_str = ", ".join(f"n={i+1}: {modes[i]:.0f} Hz" for i in range(len(modes)))
+    return [Warning(
+        category="off_resonance",
+        severity="warning",
+        message=(
+            f"drive frequency {f_drive:.0f} Hz is outside the chamber "
+            f"Q-bandwidth of every radial mode (closest is mode n={n_label} "
+            f"at {f_closest:.0f} Hz, bandwidth ±{bandwidth_closest:.1f} Hz, "
+            f"Δf = {delta:+.0f} Hz). "
+            f"All scanned modes: {mode_str}. "
+            "Expect 10-100× reduced effective P_A in chamber."
+        ),
+        actionable_fix=(
+            f"set drive.waveforms[*].f to {f_closest:.0f} Hz "
+            f"(closest mode, n={n_label}) or pick another mode from "
+            f"{{ {mode_str} }}; alternatively reduce chamber.Q to widen the band."
+        ),
+    )]
 
 
 def _check_sub_blake(s: Scenario) -> list[Warning]:
@@ -493,15 +518,42 @@ def _check_tolerances_for_mach(s: Scenario) -> list[Warning]:
 # Geometry / chamber helpers
 # ---------------------------------------------------------------------------
 def _chamber_fundamental_freq(chamber: Chamber, liquid: LiquidProperties) -> float:
+    """Fundamental (n=1) radial / axial resonance — back-compat shim."""
+    modes = _chamber_resonant_modes(chamber, liquid, max_n=1)
+    return modes[0] if modes else 0.0
+
+
+def _chamber_resonant_modes(
+    chamber: Chamber, liquid: LiquidProperties, max_n: int = 4,
+) -> list[float]:
+    """Return the first `max_n` resonant mode frequencies (Hz) of the chamber.
+
+    Spherical and 1-D cavity modes have an evenly-spaced harmonic ladder
+    (`f_n = n · f_1`). The radial Bessel modes of a cylinder use the
+    sequence of zeros of J₀′ (3.832, 7.016, 10.174, 13.324, ...). HIFU /
+    pistol-jet open-bath geometries return an empty list (no closed-
+    cavity resonance).
+
+    Used by the §12.6 off-resonance validate() check so a drive at the
+    *second* radial mode of a sphere doesn't get falsely flagged as
+    off-resonance against the fundamental.
+    """
     geom = chamber.geometry
     if geom == "sphere":
-        return liquid.c / (2.0 * chamber.radius)
+        f1 = liquid.c / (2.0 * chamber.radius)
+        return [n * f1 for n in range(1, max_n + 1)]
     if geom in ("cylinder_axial", "horn_open_bath"):
         L = chamber.length if chamber.length is not None else 2.0 * chamber.radius
-        return liquid.c / (2.0 * L)
+        f1 = liquid.c / (2.0 * L)
+        return [n * f1 for n in range(1, max_n + 1)]
     if geom == "cylinder_radial":
-        return liquid.c * 3.832 / (2.0 * math.pi * chamber.radius)
-    # HIFU / pistol_jet — no closed cavity resonance; return 0 to skip
+        # Zeros of J₀′ (radial pressure modes of a closed cylinder).
+        bessel_zeros = [3.832, 7.016, 10.174, 13.324][:max_n]
+        return [liquid.c * j / (2.0 * math.pi * chamber.radius)
+                for j in bessel_zeros]
+    # HIFU / pistol_jet — no closed cavity resonance; return [] to skip
+    return []
+    # Fallback for any newer geom strings that don't have a model
     # the off-resonance check.
     return 0.0
 
@@ -804,6 +856,7 @@ def _apply_suggestions_post_processing(scenario: Scenario, result: ScenarioResul
         result.summary.flags.append("suggestions_engine_failed")
         return
     result.summary.regime = report.regime
+    result.summary.regime_rationale = list(report.regime_rationale)
     result.suggestions = list(report.suggestions) + list(report.caveats)
 
 

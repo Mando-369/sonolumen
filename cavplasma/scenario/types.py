@@ -278,6 +278,12 @@ class ScenarioSummary:
     RT_index: Optional[float] = None                  # §14 reads; Rayleigh–Taylor proxy
     convergence_diagnostic: Optional[Any] = None
     min_p_minus_pa: Optional[float] = None            # §14 R1 reads; min(p_∞ − p_a(t))
+    # Step-by-step rationale for the regime label, keyed by check name.
+    # Values are short strings like "PASS — Mach 0.014 < 0.05" so the UI
+    # can render an audit trail explaining *why* a particular regime was
+    # picked. None = no rationale captured (e.g. v1↔v2 path that bypasses
+    # the suggestions classifier).
+    regime_rationale: Optional[list] = None           # list[tuple[str, str, str]]
     # --- §13 fills these later ---------------------------------------------
     expected_wall_lifetime_hours: Optional[float] = None
     flags: list = field(default_factory=list)

@@ -52,6 +52,89 @@ def test_classifier_sbsl_canonical():
 # 2. Classifier — sub-Blake
 # ---------------------------------------------------------------------------
 @pytest.mark.timeout(30)
+def test_classifier_returns_rationale_audit_trail():
+    """The rationale list must walk through every check in order, with
+    the matched check marked FIRED and the rest PASS/SKIP. Lets the UI
+    show 'why this regime?' under the regime card."""
+    from cavplasma.suggestions.regime import classify_with_rationale
+    s = presets.sbsl_canonical()
+    r = s.run()
+    public, internal, rationale = classify_with_rationale(s, r)
+    assert isinstance(rationale, list) and len(rationale) > 0, (
+        "rationale must be a non-empty list of (check, status, detail)"
+    )
+    statuses = [entry[1] for entry in rationale]
+    assert "FIRED" in statuses, (
+        f"rationale must contain a FIRED entry, got statuses {statuses}"
+    )
+    # FIRED must be exactly once and must be the *last* entry (we early-
+    # return on FIRED).
+    fired_idx = [i for i, s_ in enumerate(statuses) if s_ == "FIRED"]
+    assert fired_idx == [len(statuses) - 1], (
+        f"FIRED must terminate the audit, found at indices {fired_idx} "
+        f"of {len(statuses)} entries"
+    )
+
+
+def test_r6_off_resonance_scans_multiple_modes():
+    """R6 used to only check the geometric fundamental, missing drives
+    aimed at the n=2 / n=3 radial mode. Verify the message now lists
+    multiple modes and identifies the closest one."""
+    import dataclasses
+    from cavplasma.config import AcousticDrive
+    from cavplasma.scenario.types import DriveSchedule
+    from cavplasma.scenario.scenario import _check_off_resonance
+
+    s = presets.sbsl_canonical()
+    drv = next(iter(s.drive.waveforms.values()))
+    # 1 MHz drive — far from every mode of a 5 cm sphere.
+    drv_far = dataclasses.replace(drv, f=1.0e6, P_A=2.0 * 101_325.0)
+    s_far = dataclasses.replace(
+        s,
+        drive=DriveSchedule(waveforms={list(s.drive.waveforms.keys())[0]: drv_far}),
+    )
+    warnings = _check_off_resonance(s_far)
+    assert warnings, "1 MHz drive must trip R6"
+    msg = warnings[0].message
+    # Message must enumerate at least 4 scanned modes and identify the
+    # closest one with its mode index.
+    assert "n=1" in msg and "n=2" in msg and "n=3" in msg and "n=4" in msg, (
+        f"R6 must list multiple modes, got message: {msg}"
+    )
+    assert "closest is mode" in msg, (
+        f"R6 must identify the closest mode, got message: {msg}"
+    )
+
+
+def test_regime_strip_renders_one_tile_per_entry():
+    """Notebook regime strip — one coloured tile per run, tooltipped
+    with the entry's regime + headline numbers."""
+    from cavplasma.ui.callbacks import render_notebook_regime_strip
+    notebook = [
+        {"regime": "sub_blake",        "T_peak_K": 300, "R_max_um": 5,
+         "wall_mach": 0.001, "photons_4pi": 0},
+        {"regime": "linear_oscillation", "T_peak_K": 800, "R_max_um": 8,
+         "wall_mach": 0.01, "photons_4pi": 1e-50},
+        {"regime": "stable_spherical", "T_peak_K": 18000, "R_max_um": 38,
+         "wall_mach": 0.5, "photons_4pi": 1e6},
+    ]
+    out = render_notebook_regime_strip(notebook)
+    # Walk children to count tiles
+    strip_div = out.children[1]
+    assert len(strip_div.children) == 3, (
+        f"expected 3 tiles, got {len(strip_div.children)}"
+    )
+    # Tile colours match REGIME_COLOR
+    from cavplasma.ui.style import REGIME_COLOR
+    for tile, entry in zip(strip_div.children, notebook):
+        expected = REGIME_COLOR.get(entry["regime"])
+        actual = tile.style["backgroundColor"]
+        assert actual == expected, (
+            f"tile colour mismatch: regime={entry['regime']}, "
+            f"expected {expected}, got {actual}"
+        )
+
+
 def test_classifier_linear_oscillation_off_resonance():
     """Regression for the false-positive 'stable_spherical' bug:
     a 1 MHz drive on a 26.5 kHz chamber + small bubble lands in the
