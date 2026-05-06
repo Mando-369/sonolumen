@@ -153,6 +153,56 @@ def apply_preset(name: str) -> str:
     return scenario_to_store(factory())
 
 
+def scenario_to_control_values(scenario: Scenario) -> dict:
+    """Project a Scenario back into the 15 control-input values used by
+    the UI sliders / dropdowns. Used by the preset-confirmation and
+    JSON-load callbacks to keep the visible controls in sync with the
+    just-loaded scenario, so the next slider nudge doesn't silently
+    overwrite the loaded values from stale slider positions.
+
+    Slider step rounding (e.g. drive_f log10 → 0.05 step) means the
+    sync is lossy at the kHz level; the scenario_store written by the
+    follow-up `_apply_controls` will be ≈SBSL canonical, not bit-equal.
+    """
+    import math
+
+    drv = next(iter(scenario.drive.waveforms.values()), None)
+    if drv is not None:
+        drive_f_log10 = math.log10(max(drv.f, 1.0) / 1000.0)
+        drive_pa_atm = drv.P_A / 101_325.0
+        drive_cycles = drv.n_cycles
+    else:
+        drive_f_log10 = 1.42
+        drive_pa_atm = 1.32
+        drive_cycles = 8
+
+    seed = scenario.bubble_population.seed
+    if seed is not None:
+        bubble_R0_log10 = math.log10(max(seed.R0, 1e-12) * 1e6)
+        gas = seed.gas_composition or {}
+    else:
+        bubble_R0_log10 = 0.65
+        gas = {}
+
+    return {
+        "liquid_dropdown":   scenario.liquid.name,
+        "ambient_T":         scenario.ambient.T_inf,
+        "ambient_p":         scenario.ambient.p_inf / 1_000.0,
+        "drive_f":           drive_f_log10,
+        "drive_pa":          drive_pa_atm,
+        "drive_cycles":      drive_cycles,
+        "bubble_R0":         bubble_R0_log10,
+        "gas_ar":            float(gas.get("Ar", 0.0)),
+        "gas_h2o":           float(gas.get("H2O", 0.0)),
+        "gas_air":           0.0,
+        "phys_bubble_eq":    scenario.physics_options.bubble_eq,
+        "phys_thermal":      scenario.physics_options.thermal_model,
+        "phys_ionization":   scenario.physics_options.ionization_model,
+        "num_rtol":          math.log10(max(scenario.numerics.rtol, 1e-30)),
+        "num_conv":          bool(scenario.numerics.convergence_test),
+    }
+
+
 # ===========================================================================
 # Run (TEST button) — Scenario → ScenarioResult
 # ===========================================================================
@@ -462,16 +512,90 @@ def latest_cached_result() -> Optional[Any]:
 def register_callbacks(app: Any) -> None:
     """Wire all @callback decorators onto the Dash app."""
 
-    # Initialise scenario_store on first load
+    # ----------------------------------------------------------------------
+    # Preset flow: dropdown → confirmation modal → apply (+ sync controls)
+    # ----------------------------------------------------------------------
     @app.callback(
-        Output("scenario_store", "data", allow_duplicate=True),
+        Output("preset_modal", "is_open"),
+        Output("preset_pending", "data"),
+        Output("preset_modal_name", "children"),
         Input("preset_dropdown", "value"),
+        State("preset_last_loaded", "data"),
         prevent_initial_call=True,
     )
-    def _load_preset(name):                                              # noqa: ANN001
-        if not name:
-            return no_update
-        return apply_preset(name)
+    def _open_preset_modal(value, last_loaded):                         # noqa: ANN001
+        # Skip the confirmation when the dropdown is being silently reverted
+        # by `_cancel_preset` (value == last_loaded means no real change).
+        if not value or value == last_loaded:
+            return False, None, no_update
+        return True, value, value
+
+    @app.callback(
+        Output("scenario_store", "data", allow_duplicate=True),
+        Output("preset_modal", "is_open", allow_duplicate=True),
+        Output("preset_last_loaded", "data"),
+        Output("liquid_dropdown", "value"),
+        Output("ambient_T", "value"),
+        Output("ambient_p", "value"),
+        Output("drive_f", "value"),
+        Output("drive_pa", "value"),
+        Output("drive_cycles", "value"),
+        Output("bubble_R0", "value"),
+        Output("gas_ar", "value"),
+        Output("gas_h2o", "value"),
+        Output("gas_air", "value"),
+        Output("phys_bubble_eq", "value"),
+        Output("phys_thermal", "value"),
+        Output("phys_ionization", "value"),
+        Output("num_rtol", "value"),
+        Output("num_conv", "value"),
+        Input("preset_modal_confirm", "n_clicks"),
+        State("preset_pending", "data"),
+        prevent_initial_call=True,
+    )
+    def _confirm_preset(n_clicks, pending):                             # noqa: ANN001
+        if not n_clicks or not pending:
+            return [no_update] * 18
+        try:
+            payload = apply_preset(pending)
+        except Exception:                                               # noqa: BLE001
+            return [no_update] * 18
+        scenario = scenario_from_store(payload)
+        ctrls = scenario_to_control_values(scenario)
+        return (
+            payload,         # scenario_store
+            False,           # close modal
+            pending,         # preset_last_loaded
+            ctrls["liquid_dropdown"],
+            ctrls["ambient_T"],
+            ctrls["ambient_p"],
+            ctrls["drive_f"],
+            ctrls["drive_pa"],
+            ctrls["drive_cycles"],
+            ctrls["bubble_R0"],
+            ctrls["gas_ar"],
+            ctrls["gas_h2o"],
+            ctrls["gas_air"],
+            ctrls["phys_bubble_eq"],
+            ctrls["phys_thermal"],
+            ctrls["phys_ionization"],
+            ctrls["num_rtol"],
+            ctrls["num_conv"],
+        )
+
+    @app.callback(
+        Output("preset_modal", "is_open", allow_duplicate=True),
+        Output("preset_dropdown", "value"),
+        Input("preset_modal_cancel", "n_clicks"),
+        State("preset_last_loaded", "data"),
+        prevent_initial_call=True,
+    )
+    def _cancel_preset(n_clicks, last_loaded):                          # noqa: ANN001
+        if not n_clicks:
+            return no_update, no_update
+        # Revert dropdown to the last confirmed value (or back to placeholder
+        # if nothing has been loaded yet).
+        return False, last_loaded
 
     # Apply control values (debounced via Dash's natural batching)
     @app.callback(
@@ -671,18 +795,50 @@ def register_callbacks(app: Any) -> None:
 
     @app.callback(
         Output("scenario_store", "data", allow_duplicate=True),
+        Output("liquid_dropdown", "value", allow_duplicate=True),
+        Output("ambient_T", "value", allow_duplicate=True),
+        Output("ambient_p", "value", allow_duplicate=True),
+        Output("drive_f", "value", allow_duplicate=True),
+        Output("drive_pa", "value", allow_duplicate=True),
+        Output("drive_cycles", "value", allow_duplicate=True),
+        Output("bubble_R0", "value", allow_duplicate=True),
+        Output("gas_ar", "value", allow_duplicate=True),
+        Output("gas_h2o", "value", allow_duplicate=True),
+        Output("gas_air", "value", allow_duplicate=True),
+        Output("phys_bubble_eq", "value", allow_duplicate=True),
+        Output("phys_thermal", "value", allow_duplicate=True),
+        Output("phys_ionization", "value", allow_duplicate=True),
+        Output("num_rtol", "value", allow_duplicate=True),
+        Output("num_conv", "value", allow_duplicate=True),
         Input("load_upload", "contents"),
         prevent_initial_call=True,
     )
     def _load(contents):                                                # noqa: ANN001
         if not contents:
-            return no_update
+            return [no_update] * 16
         try:
             import base64
             _header, b64 = contents.split(",", 1)
             text = base64.b64decode(b64).decode("utf-8")
-            # Validate
-            Scenario.from_json(text)
-            return text
+            scenario = Scenario.from_json(text)
         except Exception:                                                # noqa: BLE001
-            return no_update
+            return [no_update] * 16
+        ctrls = scenario_to_control_values(scenario)
+        return (
+            text,
+            ctrls["liquid_dropdown"],
+            ctrls["ambient_T"],
+            ctrls["ambient_p"],
+            ctrls["drive_f"],
+            ctrls["drive_pa"],
+            ctrls["drive_cycles"],
+            ctrls["bubble_R0"],
+            ctrls["gas_ar"],
+            ctrls["gas_h2o"],
+            ctrls["gas_air"],
+            ctrls["phys_bubble_eq"],
+            ctrls["phys_thermal"],
+            ctrls["phys_ionization"],
+            ctrls["num_rtol"],
+            ctrls["num_conv"],
+        )

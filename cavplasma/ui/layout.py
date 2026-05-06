@@ -315,6 +315,35 @@ def notebook_panel() -> dbc.Card:
 # ---------------------------------------------------------------------------
 # Top-level layout
 # ---------------------------------------------------------------------------
+def _preset_confirm_modal() -> dbc.Modal:
+    """§15 — confirmation modal for preset / JSON load.
+
+    Loading a preset overwrites every slider, dropdown, and toggle in
+    the controls panel. The modal makes that explicit so the user
+    doesn't lose work to a single dropdown click.
+    """
+    return dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("Overwrite current settings?")),
+            dbc.ModalBody([
+                html.P([
+                    "Loading ",
+                    html.Span(id="preset_modal_name", className="fw-bold"),
+                    " will replace every control value with the preset's settings.",
+                ]),
+                html.P("Continue?"),
+            ]),
+            dbc.ModalFooter([
+                dbc.Button("Cancel", id="preset_modal_cancel",
+                           color="secondary", outline=True),
+                dbc.Button("Load preset", id="preset_modal_confirm",
+                           color="primary"),
+            ]),
+        ],
+        id="preset_modal", is_open=False, centered=True, backdrop="static",
+    )
+
+
 def app_layout() -> dbc.Container:
     return dbc.Container(
         [
@@ -334,10 +363,13 @@ def app_layout() -> dbc.Container:
                 ],
                 className="g-2 mt-2",
             ),
+            _preset_confirm_modal(),
             dcc.Store(id="scenario_store"),
             dcc.Store(id="result_store"),
             dcc.Store(id="notebook_store", storage_type="session", data=[]),
             dcc.Store(id="anim_state", data={"playing": False, "frame": 0}),
+            dcc.Store(id="preset_pending", data=None),
+            dcc.Store(id="preset_last_loaded", data=None),
             dcc.Interval(id="animation_tick", interval=ANIMATION_TICK_MS,
                          disabled=True),
         ],
