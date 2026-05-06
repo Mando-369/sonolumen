@@ -17,6 +17,12 @@ onto `ScenarioResult`. No v1 or §12 code mutates inside this module.
 
 from cavplasma.suggestions.caveats import ALL_CAVEATS
 from cavplasma.suggestions.engine import SuggestionsEngine, SuggestionsReport
+from cavplasma.suggestions.inverse_design import (
+    DesignConstraints,
+    DesignTarget,
+    initial_design,
+    refine_design,
+)
 from cavplasma.suggestions.next_experiment import (
     Goal,
     suggest_next_experiment,
@@ -32,4 +38,8 @@ __all__ = [
     "Goal",
     "ALL_RULES",
     "ALL_CAVEATS",
+    "DesignTarget",
+    "DesignConstraints",
+    "initial_design",
+    "refine_design",
 ]

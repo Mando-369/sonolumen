@@ -270,6 +270,84 @@ def render_figures(
     return out
 
 
+def autodesign_find(target_T_kK: float, must_be_stable: bool,
+                     max_transducer_atm: float,
+                     base_scenario_payload: Optional[str],
+                     ) -> tuple[Optional[str], str, list]:
+    """Heuristic auto-design — instant. Returns (payload, status, diagnostic_rows)."""
+    from cavplasma.suggestions import (
+        DesignTarget, DesignConstraints, initial_design,
+    )
+    base = scenario_from_store(base_scenario_payload) or None
+    target = DesignTarget(
+        T_peak_K=float(target_T_kK) * 1000.0,
+        must_be_stable_spherical=bool(must_be_stable),
+        feasible_transducer_atm=float(max_transducer_atm),
+    )
+    constraints = DesignConstraints()
+    try:
+        designed, diag = initial_design(target, constraints, base=base)
+    except Exception as exc:                                            # noqa: BLE001
+        return None, f"design failed: {type(exc).__name__}: {exc}", []
+    rows = [
+        html.Li(diag.get("drive_freq_rationale", "")),
+        html.Li(diag.get("R0_rationale", "")),
+        html.Li(diag.get("P_A_rationale", "")),
+    ]
+    diagnostic = html.Div([
+        html.Em("how it picked the parameters:"),
+        html.Ul(rows, style={"marginTop": "0.4em",
+                             "paddingLeft": "1.2em"}),
+    ])
+    return (
+        scenario_to_store(designed),
+        f"design loaded — TEST to verify it hits {target_T_kK:.0f} kK",
+        diagnostic,
+    )
+
+
+def autodesign_refine(target_T_kK: float, must_be_stable: bool,
+                       max_transducer_atm: float,
+                       scenario_payload: Optional[str],
+                       ) -> tuple[Optional[str], str, list]:
+    """Refine via 3×3 grid search — slower but better. Same outputs."""
+    from cavplasma.suggestions import DesignTarget, refine_design
+    s = scenario_from_store(scenario_payload)
+    if s is None:
+        return None, "no scenario to refine — click 'Find parameters' first", []
+    target = DesignTarget(
+        T_peak_K=float(target_T_kK) * 1000.0,
+        must_be_stable_spherical=bool(must_be_stable),
+        feasible_transducer_atm=float(max_transducer_atm),
+    )
+    try:
+        refined, diag = refine_design(s, target)
+    except Exception as exc:                                            # noqa: BLE001
+        return None, f"refine failed: {type(exc).__name__}: {exc}", []
+    best = diag.get("best_summary", {})
+    rows: list = [
+        html.Li(f"evaluated {diag.get('n_evaluations', 0)} grid points"),
+        html.Li(f"best score = {diag.get('best_score', 0):.3f} (lower is better)"),
+    ]
+    if best:
+        rows.extend([
+            html.Li(f"best regime = {best.get('regime', '?')}"),
+            html.Li(f"best T_peak = {best.get('T_peak_K', 0):.0f} K"),
+            html.Li(f"best R_max = {best.get('R_max_um', 0):.1f} µm"),
+            html.Li(f"best Mach = {best.get('wall_mach', 0):.3f}"),
+        ])
+    diagnostic = html.Div([
+        html.Em("refinement summary:"),
+        html.Ul(rows, style={"marginTop": "0.4em",
+                             "paddingLeft": "1.2em"}),
+    ])
+    return (
+        scenario_to_store(refined),
+        f"refined — TEST to verify it lands stably",
+        diagnostic,
+    )
+
+
 def render_regime_card(result_payload: Optional[dict]) -> Any:
     if not result_payload:
         return dbc.Alert("No run yet — click TEST to populate.",
@@ -1021,6 +1099,110 @@ def register_callbacks(app: Any) -> None:
         if not n_clicks:
             return no_update
         return []
+
+    # ----------------------------------------------------------------------
+    # Auto-design — heuristic find + grid-search refine
+    # ----------------------------------------------------------------------
+    def _autodesign_outputs(payload, label, status, diagnostic):
+        """Pack the 18-output tuple shared by both autodesign callbacks."""
+        if payload is None:
+            return ([no_update] * 16) + [status, diagnostic]
+        scenario = scenario_from_store(payload)
+        ctrls = scenario_to_control_values(scenario)
+        return [
+            payload,
+            label,
+            ctrls["liquid_dropdown"],
+            ctrls["ambient_T"],
+            ctrls["ambient_p"],
+            ctrls["drive_f"],
+            ctrls["drive_pa"],
+            ctrls["drive_cycles"],
+            ctrls["bubble_R0"],
+            ctrls["gas_ar"],
+            ctrls["gas_h2o"],
+            ctrls["gas_air"],
+            ctrls["phys_bubble_eq"],
+            ctrls["phys_thermal"],
+            ctrls["phys_ionization"],
+            ctrls["num_rtol"],
+            status,
+            diagnostic,
+        ]
+
+    @app.callback(
+        Output("scenario_store", "data", allow_duplicate=True),
+        Output("scenario_source_label", "children", allow_duplicate=True),
+        Output("liquid_dropdown", "value", allow_duplicate=True),
+        Output("ambient_T", "value", allow_duplicate=True),
+        Output("ambient_p", "value", allow_duplicate=True),
+        Output("drive_f", "value", allow_duplicate=True),
+        Output("drive_pa", "value", allow_duplicate=True),
+        Output("drive_cycles", "value", allow_duplicate=True),
+        Output("bubble_R0", "value", allow_duplicate=True),
+        Output("gas_ar", "value", allow_duplicate=True),
+        Output("gas_h2o", "value", allow_duplicate=True),
+        Output("gas_air", "value", allow_duplicate=True),
+        Output("phys_bubble_eq", "value", allow_duplicate=True),
+        Output("phys_thermal", "value", allow_duplicate=True),
+        Output("phys_ionization", "value", allow_duplicate=True),
+        Output("num_rtol", "value", allow_duplicate=True),
+        Output("autodesign_status", "children"),
+        Output("autodesign_diagnostic", "children"),
+        Input("autodesign_find_btn", "n_clicks"),
+        State("autodesign_T_target_kK", "value"),
+        State("autodesign_must_be_stable", "value"),
+        State("autodesign_max_pa", "value"),
+        State("scenario_store", "data"),
+        prevent_initial_call=True,
+    )
+    def _autodesign_find_cb(n, T_target, stable, max_pa, base_payload):  # noqa: ANN001
+        if not n:
+            return [no_update] * 18
+        payload, status, diagnostic = autodesign_find(
+            T_target, stable, max_pa, base_payload)
+        return _autodesign_outputs(
+            payload,
+            f"auto-design · target {T_target:.0f} kK · heuristic",
+            status, diagnostic,
+        )
+
+    @app.callback(
+        Output("scenario_store", "data", allow_duplicate=True),
+        Output("scenario_source_label", "children", allow_duplicate=True),
+        Output("liquid_dropdown", "value", allow_duplicate=True),
+        Output("ambient_T", "value", allow_duplicate=True),
+        Output("ambient_p", "value", allow_duplicate=True),
+        Output("drive_f", "value", allow_duplicate=True),
+        Output("drive_pa", "value", allow_duplicate=True),
+        Output("drive_cycles", "value", allow_duplicate=True),
+        Output("bubble_R0", "value", allow_duplicate=True),
+        Output("gas_ar", "value", allow_duplicate=True),
+        Output("gas_h2o", "value", allow_duplicate=True),
+        Output("gas_air", "value", allow_duplicate=True),
+        Output("phys_bubble_eq", "value", allow_duplicate=True),
+        Output("phys_thermal", "value", allow_duplicate=True),
+        Output("phys_ionization", "value", allow_duplicate=True),
+        Output("num_rtol", "value", allow_duplicate=True),
+        Output("autodesign_status", "children", allow_duplicate=True),
+        Output("autodesign_diagnostic", "children", allow_duplicate=True),
+        Input("autodesign_refine_btn", "n_clicks"),
+        State("autodesign_T_target_kK", "value"),
+        State("autodesign_must_be_stable", "value"),
+        State("autodesign_max_pa", "value"),
+        State("scenario_store", "data"),
+        prevent_initial_call=True,
+    )
+    def _autodesign_refine_cb(n, T_target, stable, max_pa, payload):     # noqa: ANN001
+        if not n:
+            return [no_update] * 18
+        new_payload, status, diagnostic = autodesign_refine(
+            T_target, stable, max_pa, payload)
+        return _autodesign_outputs(
+            new_payload,
+            f"auto-design · target {T_target:.0f} kK · refined (3×3 grid)",
+            status, diagnostic,
+        )
 
     # Save / Load
     @app.callback(

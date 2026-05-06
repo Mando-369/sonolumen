@@ -53,6 +53,8 @@ def controls_panel() -> dbc.Card:
                             _accordion_item("Bubble", _bubble_controls(), "bub"),
                             _accordion_item("Physics", _physics_controls(), "phy"),
                             _accordion_item("Numerics", _numerics_controls(), "num"),
+                            _accordion_item("Auto-design (target → params)",
+                                            _autodesign_controls(), "auto"),
                         ],
                         always_open=True, start_collapsed=True,
                         active_item=["drv", "bub"],
@@ -264,6 +266,49 @@ def _physics_controls() -> html.Div:
                          {"label": "Ideal Saha", "value": "ideal_saha"},
                      ],
                      value="stewart_pyatt", clearable=False),
+    ])
+
+
+def _autodesign_controls() -> html.Div:
+    """Inverse-design panel — target outcome → parameters.
+
+    The user sets a target T_peak, ticks feasibility filters, and clicks
+    "Find parameters" to get a heuristic match (instant) or "Refine"
+    for a 9-point grid search around the heuristic (~15-30 s). The
+    found scenario replaces every other control via the same callback
+    chain that handles preset confirmation, so the user can inspect /
+    TEST / save the auto-designed scenario like any other config.
+    """
+    return html.Div([
+        dbc.Label("Target T_peak (kK)"),
+        dcc.Slider(id="autodesign_T_target_kK",
+                   min=5, max=50, step=1, value=20,
+                   marks={5: "5", 15: "15", 25: "25", 35: "35", 50: "50"},
+                   tooltip={"placement": "bottom", "always_visible": False,
+                            "template": "{value} kK"}),
+        html.Br(),
+        dbc.Switch(id="autodesign_must_be_stable", value=True,
+                   label="Require stable_spherical regime"),
+        html.Br(),
+        dbc.Label("Max transducer P_A (atm) — feasibility"),
+        dcc.Slider(id="autodesign_max_pa", min=1, max=20, step=0.5, value=5.0,
+                   marks={1: "1", 5: "5", 10: "10", 20: "20"},
+                   tooltip={"placement": "bottom", "always_visible": False}),
+        html.Hr(),
+        dbc.Row([
+            dbc.Col(dbc.Button("Find parameters", id="autodesign_find_btn",
+                                color="info", size="sm", className="w-100"),
+                    width=6),
+            dbc.Col(dbc.Button("Refine (~15 s)", id="autodesign_refine_btn",
+                                color="info", size="sm", outline=True,
+                                className="w-100"),
+                    width=6),
+        ], className="g-2"),
+        html.Div(id="autodesign_status",
+                  className="text-muted small mt-2"),
+        html.Div(id="autodesign_diagnostic",
+                  className="small mt-2",
+                  style={"fontSize": "0.85em"}),
     ])
 
 
