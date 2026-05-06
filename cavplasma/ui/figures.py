@@ -428,21 +428,55 @@ def detector_traces_figure(payload: dict) -> go.Figure:
 
 
 # ---------------------------------------------------------------------------
-# §15.4.6 — Standing-wave field heatmap
+# §15.4.6 — Standing-wave field heatmap (with spatial-factor caching)
 # ---------------------------------------------------------------------------
+import functools
+
+
+@functools.lru_cache(maxsize=8)
+def _spatial_field_grid(
+    chamber_geometry: str, chamber_radius: float, chamber_length: Optional[float],
+    n_grid: int,
+) -> tuple:
+    """Pre-compute the time-independent eigenmode spatial factor on a grid.
+
+    Returns (xs, ys, spatial_grid) where spatial_grid[iy, ix] is the
+    `standing_wave_factor` at (x, y, 0). `np.nan` outside the chamber.
+    Cached by the chamber descriptor so animation scrubbing is cheap —
+    each frame is just `spatial_grid · time_factor(t)`.
+    """
+    from cavplasma.scenario.types import Chamber, WallMaterial
+    chamber = Chamber(geometry=chamber_geometry,
+                       radius=chamber_radius, length=chamber_length,
+                       wall_material=WallMaterial())
+    xs = np.linspace(-chamber_radius, chamber_radius, n_grid)
+    ys = np.linspace(-chamber_radius, chamber_radius, n_grid)
+    grid = np.full((n_grid, n_grid), np.nan)
+    for ix, x in enumerate(xs):
+        for iy, y in enumerate(ys):
+            r = math.hypot(x, y)
+            if r > chamber_radius:
+                continue
+            grid[iy, ix] = standing_wave_factor(chamber, (x, y, 0.0))
+    return xs, ys, grid
+
+
 def standing_wave_field_figure(
     scenario: Scenario, t_anim: float = 0.0, *, n_grid: int = 50,
 ) -> go.Figure:
     """Heatmap of p_a(x, y, t_anim) over the chamber cross-section.
 
-    Pure analytic mode (§12.4). For a sphere centred on the origin:
-      p(r, t) = factor(r) · sum over transducers of A_k sin(2π f_k t + φ_k).
+    Pure analytic mode (§12.4). The expensive part — evaluating the
+    spatial eigenmode factor on a grid — is cached via
+    `_spatial_field_grid`, so per-frame cost during animation scrubbing
+    drops to a single multiply + Plotly figure construction (≈ 5 ms).
     """
     chamber = scenario.chamber
     R = chamber.radius
-    xs = np.linspace(-R, R, n_grid)
-    ys = np.linspace(-R, R, n_grid)
-    grid = np.zeros((n_grid, n_grid))
+
+    xs, ys, spatial = _spatial_field_grid(
+        chamber.geometry, chamber.radius, chamber.length, n_grid,
+    )
 
     drv = combine_drives(
         scenario.transducers, scenario.drive,
@@ -450,7 +484,7 @@ def standing_wave_field_figure(
         chamber,
     )
     if drv.P_A == 0.0:
-        # No drive — flat field
+        grid = np.where(np.isnan(spatial), np.nan, 0.0)
         fig = go.Figure(go.Heatmap(
             x=xs, y=ys, z=grid,
             colorscale="RdBu", zmid=0.0,
@@ -467,16 +501,7 @@ def standing_wave_field_figure(
     omega = 2.0 * math.pi * drv.f
     # Time-domain factor (additive convention: p_a = -P_A sin(ωt + φ))
     time_factor = -drv.P_A * math.sin(omega * t_anim + drv.phase)
-
-    for ix, x in enumerate(xs):
-        for iy, y in enumerate(ys):
-            r = math.hypot(x, y)
-            if r > R:
-                grid[iy, ix] = np.nan
-                continue
-            # Spatial factor uses the chamber's analytic eigenmode
-            spatial = standing_wave_factor(chamber, (x, y, 0.0))
-            grid[iy, ix] = spatial * time_factor
+    grid = spatial * time_factor
 
     z_abs = np.nanmax(np.abs(grid)) or 1.0
     fig = go.Figure(go.Heatmap(
@@ -484,7 +509,6 @@ def standing_wave_field_figure(
         colorscale="RdBu", zmin=-z_abs, zmax=z_abs,
         colorbar=dict(title="p_a (Pa)"),
     ))
-    # Bubble overlay
     pop = scenario.bubble_population
     if pop.seed_position is not None:
         bx, by, _ = pop.seed_position

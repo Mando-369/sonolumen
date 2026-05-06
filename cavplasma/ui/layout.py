@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 from dash import dcc, html
 
 from cavplasma.ui.style import (
+    ANIMATION_FRAME_BUDGET,
     ANIMATION_TICK_MS,
     PLOT_HEIGHT_LARGE,
     PLOT_HEIGHT_MED,
@@ -232,12 +233,30 @@ def visualization_panel() -> dbc.Card:
                 dbc.Row([
                     dbc.Col(
                         dbc.Button("▶ Play", id="anim_toggle",
-                                   color="info", size="sm"),
+                                   color="info", size="sm",
+                                   style={"minWidth": "92px"}),
                         width="auto"),
-                    dbc.Col(html.Div(id="anim_status",
-                                     className="text-muted small mt-1"),
-                            width="auto"),
-                ], className="g-2"),
+                    dbc.Col(
+                        dcc.Slider(
+                            id="time_slider",
+                            min=0, max=ANIMATION_FRAME_BUDGET - 1,
+                            step=1, value=0,
+                            marks=None,
+                            tooltip={"placement": "bottom",
+                                     "always_visible": False,
+                                     "template": "frame {value}"},
+                            updatemode="drag",
+                        ),
+                        width=True),
+                    dbc.Col(
+                        html.Div(id="time_readout",
+                                 className="text-muted small",
+                                 style={"minWidth": "200px",
+                                        "textAlign": "right"}),
+                        width="auto"),
+                ], className="g-2 align-items-center mt-1"),
+                html.Div(id="anim_status",
+                         className="text-muted small text-end"),
             ]),
         ],
     )

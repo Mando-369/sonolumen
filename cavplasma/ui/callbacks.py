@@ -373,17 +373,36 @@ def animation_frame_figure(
     """Return the standing-wave field figure at the requested frame.
 
     Frames cycle through one acoustic period at the current drive freq.
+    The expensive spatial-factor evaluation is cached inside
+    `figures._spatial_field_grid`, so each frame is essentially a
+    multiply + figure construction.
     """
     s = scenario_from_store(scenario_payload)
     if s is None:
         return _empty("Standing wave field")
     drv = next(iter(s.drive.waveforms.values()), None)
-    if drv is None or drv.P_A == 0.0:
-        return figures.standing_wave_field_figure(s, t_anim=0.0)
+    if drv is None or drv.P_A == 0.0 or drv.f <= 0.0:
+        return figures.standing_wave_field_figure(s, t_anim=0.0, n_grid=40)
     period = 1.0 / drv.f
     n_frames = ANIMATION_FRAME_BUDGET
     t = (frame_idx % n_frames) / n_frames * period
     return figures.standing_wave_field_figure(s, t_anim=t, n_grid=40)
+
+
+def _animation_time_readout(scenario_payload: Optional[str], frame_idx: int) -> str:
+    """Format a 'frame N/60 · t = X.XX µs / period Y.YY µs' caption."""
+    from cavplasma.ui.style import ANIMATION_FRAME_BUDGET
+    s = scenario_from_store(scenario_payload)
+    base = f"frame {int(frame_idx)}/{ANIMATION_FRAME_BUDGET}"
+    if s is None:
+        return base
+    drv = next(iter(s.drive.waveforms.values()), None)
+    if drv is None or drv.f <= 0.0 or drv.P_A == 0.0:
+        return base
+    period_s = 1.0 / drv.f
+    t_us = (frame_idx / ANIMATION_FRAME_BUDGET) * period_s * 1e6
+    period_us = period_s * 1e6
+    return f"{base} · t = {t_us:.3f} µs / {period_us:.2f} µs"
 
 
 # ===========================================================================
@@ -704,17 +723,25 @@ def register_callbacks(app: Any) -> None:
             return no_update
         return render_audio(result_payload)
 
-    # Animation tick — update field figure
+    # ----------------------------------------------------------------------
+    # Animation: play / scrub / render. Three callbacks:
+    #   1. Toggle button → flip anim_state.playing
+    #   2. Tick interval → advance anim_state.frame + sync slider value
+    #   3. Slider drag_value → set anim_state.frame, pause autoplay
+    #   4. Render → field_fig + time readout from anim_state
+    # ----------------------------------------------------------------------
     @app.callback(
         Output("anim_state", "data"),
+        Output("anim_toggle", "children"),
         Input("anim_toggle", "n_clicks"),
         State("anim_state", "data"),
         prevent_initial_call=True,
     )
     def _toggle_anim(n_clicks, state):                                  # noqa: ANN001
         new_playing = not (state or {}).get("playing", False)
-        return {"playing": new_playing,
-                "frame": (state or {}).get("frame", 0)}
+        new_state = {"playing": new_playing,
+                     "frame": (state or {}).get("frame", 0)}
+        return new_state, ("❚❚ Pause" if new_playing else "▶ Play")
 
     @app.callback(
         Output("animation_tick", "disabled"),
@@ -727,20 +754,47 @@ def register_callbacks(app: Any) -> None:
                 "playing" if playing else "paused")
 
     @app.callback(
-        Output("field_fig", "figure", allow_duplicate=True),
         Output("anim_state", "data", allow_duplicate=True),
+        Output("time_slider", "value"),
         Input("animation_tick", "n_intervals"),
         State("anim_state", "data"),
+        prevent_initial_call=True,
+    )
+    def _tick(n_intervals, state):                                      # noqa: ANN001
+        from cavplasma.ui.style import ANIMATION_FRAME_BUDGET
+        if not (state or {}).get("playing", False):
+            return no_update, no_update
+        next_frame = ((state or {}).get("frame", 0) + 1) % ANIMATION_FRAME_BUDGET
+        return ({"playing": True, "frame": next_frame}, next_frame)
+
+    @app.callback(
+        Output("anim_state", "data", allow_duplicate=True),
+        Output("anim_toggle", "children", allow_duplicate=True),
+        Input("time_slider", "drag_value"),
+        State("anim_state", "data"),
+        prevent_initial_call=True,
+    )
+    def _scrub_drag(drag_value, state):                                 # noqa: ANN001
+        # `drag_value` only fires on user interaction; programmatic
+        # `time_slider.value` updates from `_tick` don't trigger this.
+        if drag_value is None:
+            return no_update, no_update
+        return ({"playing": False, "frame": int(drag_value)}, "▶ Play")
+
+    @app.callback(
+        Output("field_fig", "figure", allow_duplicate=True),
+        Output("time_readout", "children"),
+        Input("anim_state", "data"),
         State("scenario_store", "data"),
         State("result_store", "data"),
         prevent_initial_call=True,
     )
-    def _tick(n_intervals, state, scenario_payload, result_payload):    # noqa: ANN001
-        if not (state or {}).get("playing", False):
-            return no_update, no_update
-        frame_idx = (state or {}).get("frame", 0) + 1
+    def _render_anim(state, scenario_payload, result_payload):          # noqa: ANN001
+        from cavplasma.ui.style import ANIMATION_FRAME_BUDGET
+        frame_idx = (state or {}).get("frame", 0) % ANIMATION_FRAME_BUDGET
         fig = animation_frame_figure(scenario_payload, result_payload, frame_idx)
-        return fig, {"playing": True, "frame": frame_idx}
+        readout = _animation_time_readout(scenario_payload, frame_idx)
+        return fig, readout
 
     # Notebook
     @app.callback(
