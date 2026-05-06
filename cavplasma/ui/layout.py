@@ -126,6 +126,15 @@ def controls_panel() -> dbc.Card:
                             id="load_upload", multiple=False,
                         ), width=6),
                     ], className="g-2"),
+                    # Shows what's currently in the scenario store: a preset
+                    # name when one is loaded from the dropdown, or the file
+                    # name when one is uploaded via Load JSON. Updated by the
+                    # _confirm_preset and _load callbacks.
+                    html.Div(
+                        id="scenario_source_label",
+                        className="text-muted small mt-1",
+                        style={"fontStyle": "italic"},
+                    ),
                     dcc.Download(id="save_download"),
                 ],
             ),

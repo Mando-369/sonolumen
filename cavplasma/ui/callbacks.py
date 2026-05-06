@@ -657,6 +657,7 @@ def register_callbacks(app: Any) -> None:
         Output("scenario_store", "data", allow_duplicate=True),
         Output("preset_modal", "is_open", allow_duplicate=True),
         Output("preset_last_loaded", "data"),
+        Output("scenario_source_label", "children", allow_duplicate=True),
         Output("liquid_dropdown", "value"),
         Output("ambient_T", "value"),
         Output("ambient_p", "value"),
@@ -678,17 +679,18 @@ def register_callbacks(app: Any) -> None:
     )
     def _confirm_preset(n_clicks, pending):                             # noqa: ANN001
         if not n_clicks or not pending:
-            return [no_update] * 18
+            return [no_update] * 19
         try:
             payload = apply_preset(pending)
         except Exception:                                               # noqa: BLE001
-            return [no_update] * 18
+            return [no_update] * 19
         scenario = scenario_from_store(payload)
         ctrls = scenario_to_control_values(scenario)
         return (
-            payload,         # scenario_store
-            False,           # close modal
-            pending,         # preset_last_loaded
+            payload,                          # scenario_store
+            False,                            # close modal
+            pending,                          # preset_last_loaded
+            f"loaded preset · {pending}",     # scenario_source_label
             ctrls["liquid_dropdown"],
             ctrls["ambient_T"],
             ctrls["ambient_p"],
@@ -1035,6 +1037,7 @@ def register_callbacks(app: Any) -> None:
 
     @app.callback(
         Output("scenario_store", "data", allow_duplicate=True),
+        Output("scenario_source_label", "children", allow_duplicate=True),
         Output("liquid_dropdown", "value", allow_duplicate=True),
         Output("ambient_T", "value", allow_duplicate=True),
         Output("ambient_p", "value", allow_duplicate=True),
@@ -1051,21 +1054,36 @@ def register_callbacks(app: Any) -> None:
         Output("num_rtol", "value", allow_duplicate=True),
         Output("num_conv", "value", allow_duplicate=True),
         Input("load_upload", "contents"),
+        State("load_upload", "filename"),
         prevent_initial_call=True,
     )
-    def _load(contents):                                                # noqa: ANN001
+    def _load(contents, filename):                                       # noqa: ANN001
         if not contents:
-            return [no_update] * 16
+            return [no_update] * 17
         try:
             import base64
             _header, b64 = contents.split(",", 1)
             text = base64.b64decode(b64).decode("utf-8")
             scenario = Scenario.from_json(text)
-        except Exception:                                                # noqa: BLE001
-            return [no_update] * 16
+        except Exception as exc:                                          # noqa: BLE001
+            label = f"failed to load {filename or 'file'}: {type(exc).__name__}"
+            return ([no_update, label]
+                    + [no_update] * 15)
         ctrls = scenario_to_control_values(scenario)
+        # Pull the scenario's own metadata.name when present, otherwise
+        # show the uploaded filename. Helps the user tell whether the
+        # file's metadata is informative or whether they need to look
+        # at the filename only.
+        scenario_name = scenario.metadata.get("name") if scenario.metadata else None
+        if scenario_name and filename and scenario_name not in filename:
+            label = f"loaded · {filename}  (scenario.name = {scenario_name})"
+        elif filename:
+            label = f"loaded · {filename}"
+        else:
+            label = "loaded · (unnamed JSON)"
         return (
             text,
+            label,
             ctrls["liquid_dropdown"],
             ctrls["ambient_T"],
             ctrls["ambient_p"],
