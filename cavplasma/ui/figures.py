@@ -483,50 +483,80 @@ def standing_wave_field_figure(
         scenario.bubble_population.seed_position or (0.0, 0.0, 0.0),
         chamber,
     )
-    # Distinguish two zero-drive cases for a clearer message: an impulsive
-    # population (e.g. pistol_shrimp_event has no transducers / no drive
-    # waveforms — there is nothing to animate, by design) vs. a transducer
-    # exists but its amplitude has been zeroed.
+    # No AC drive (no transducer / no waveform / amplitude == 0) — but the
+    # *static* ambient pressure is still real and is what drives the
+    # collapse for impulsive events (pistol shrimp, laser cavitation,
+    # etc.). Render it as a uniform field so the user can see the
+    # hydrostatic context, not a confusing blank square.
     has_waveforms = bool(scenario.drive.waveforms)
     has_transducers = bool(scenario.transducers)
     if drv.P_A == 0.0:
+        p_inf_pa = scenario.ambient.p_inf
+        p_inf_atm = p_inf_pa / 101_325.0
+        # Approximate seawater hydrostatic depth above 1 atm.
+        depth_m_seawater = max(0.0, (p_inf_pa - 101_325.0) / (1025.0 * 9.81))
+        depth_str = (f" (≈ {depth_m_seawater:.1f} m seawater depth)"
+                     if depth_m_seawater > 0.5 else "")
+
         if not has_transducers and not has_waveforms:
-            note = ("Impulsive event — no acoustic drive. "
-                    "The bubble collapses under ambient pressure; "
-                    "there is no standing wave to animate.")
+            kind_note = ("Impulsive event — no acoustic transducer. "
+                         "The bubble collapses under static ambient pressure "
+                         "(no AC drive, no standing wave).")
         elif not has_transducers:
-            note = ("Drive waveform present but no transducer is defined. "
-                    "Add a transducer in the scenario to apply the drive.")
+            kind_note = ("Drive waveform set but no transducer is "
+                         "defined — add a transducer to apply the drive.")
         elif not has_waveforms:
-            note = ("Transducer present but no drive waveform. "
-                    "Set Drive amplitude > 0 atm and reload.")
+            kind_note = ("Transducer present but no drive waveform — "
+                         "set Drive amplitude > 0 atm to see the AC field.")
         else:
-            note = ("Drive amplitude is 0 atm — increase it on the "
-                    "Drive control to see the standing-wave field.")
-        # Show the chamber outline + a centred note. No heatmap needed.
+            kind_note = ("AC drive amplitude is 0 atm. Static ambient "
+                         "shown; raise Drive amplitude for an oscillating field.")
+        ambient_note = (f"Static ambient: p_∞ = {p_inf_pa/1000:.1f} kPa "
+                        f"({p_inf_atm:.2f} atm){depth_str}")
+
+        # Uniform static field — solid colour inside the chamber, NaN outside.
+        grid = np.where(np.isnan(spatial), np.nan, p_inf_pa)
+        # Symmetric +/- 2 atm window so future AC overlay stays visible too.
+        z_window = max(2.0 * 101_325.0, p_inf_pa * 1.2)
+        fig = go.Figure(go.Heatmap(
+            x=xs, y=ys, z=grid,
+            colorscale="RdBu_r",          # warm = high pressure
+            zmin=0.0, zmax=z_window,
+            colorbar=dict(title="p_static (Pa)"),
+            hovertemplate="x=%{x:.3f} m<br>y=%{y:.3f} m<br>"
+                          "p_static=%{z:.0f} Pa<extra></extra>",
+        ))
+        # Chamber outline on top of the heatmap.
         theta = np.linspace(0.0, 2.0 * math.pi, 200)
-        fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=R * np.cos(theta), y=R * np.sin(theta),
             mode="lines",
             line=dict(color="#cccccc", width=2),
             hoverinfo="skip", showlegend=False, name="chamber",
         ))
+        # Bubble seed marker.
+        pop = scenario.bubble_population
+        if pop.seed_position is not None:
+            bx, by, _ = pop.seed_position
+            fig.add_trace(go.Scatter(
+                x=[bx], y=[by], mode="markers",
+                marker=dict(symbol="circle", size=10, color="#ffae00",
+                            line=dict(color="black", width=1)),
+                name="bubble", hoverinfo="name", showlegend=False,
+            ))
         fig.update_layout(
-            title="Pressure field (no drive)",
+            title=f"Static ambient pressure · {ambient_note}",
             template=PLOT_TEMPLATE, height=PLOT_HEIGHT_MED,
             xaxis=dict(scaleanchor="y", scaleratio=1, title="x (m)",
                        range=[-1.05 * R, 1.05 * R]),
             yaxis=dict(title="y (m)", range=[-1.05 * R, 1.05 * R]),
             margin=dict(l=50, r=20, t=40, b=40),
             annotations=[dict(
-                x=0.5, y=0.5, xref="paper", yref="paper",
-                text=note,
+                x=0.5, y=-0.18, xref="paper", yref="paper",
+                text=kind_note,
                 showarrow=False,
-                font=dict(size=11, color="#93a1a1"),
-                bgcolor="rgba(7, 54, 66, 0.85)",
-                bordercolor="#586e75",
-                borderwidth=1, borderpad=8,
+                font=dict(size=10, color="#93a1a1"),
+                xanchor="center", yanchor="top",
                 align="center",
             )],
         )
