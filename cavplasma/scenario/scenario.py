@@ -312,6 +312,14 @@ def _check_off_resonance(s: Scenario) -> list[Warning]:
     fundamental is 15.3 kHz, exciting the 2nd radial mode). The check
     now scans the first 4 modes and reports the closest one. The drive
     is "off-resonance" only if it's outside the bandwidth of every mode.
+
+    **Modelling note:** the simulator interprets `drive.P_A` as the
+    *at-bubble* pressure amplitude, not the transducer output —
+    i.e. an "ideal transducer" assumption. The real chamber's Q-response
+    would attenuate an off-resonance drive by `√(1 + (2Q·Δf/f)²)`, so
+    achieving the stated `P_A` at the bubble requires a transducer
+    `atten`× louder. The warning now shows that required transducer
+    drive explicitly so the user can sanity-check feasibility.
     """
     drv = combine_drives(s.transducers, s.drive, s._bubble_position(), s.chamber)
     if drv.P_A <= 0.0:
@@ -334,6 +342,23 @@ def _check_off_resonance(s: Scenario) -> list[Warning]:
     delta = f_drive - f_closest
     n_label = closest_idx + 1
     mode_str = ", ".join(f"n={i+1}: {modes[i]:.0f} Hz" for i in range(len(modes)))
+
+    # Q-response attenuation factor — the *transducer* output you would
+    # need to deliver the at-bubble P_A the simulator is currently using.
+    atten = math.sqrt(1.0 + (delta * 2.0 * Q / f_closest) ** 2)
+    p_at_bubble_atm = drv.P_A / 101_325.0
+    p_required_atm = p_at_bubble_atm * atten
+    feasibility = ""
+    if p_required_atm > 50.0:
+        feasibility = (f" — at {p_required_atm:.0f} atm transducer "
+                        f"output (~{p_required_atm * 0.101:.1f} MPa), this "
+                        "exceeds practical piezo capacity. Either move the "
+                        "drive frequency onto a chamber mode or accept that "
+                        "the at-bubble P_A would be much lower than stated.")
+    elif p_required_atm > 10.0:
+        feasibility = (f" — feasible only with a high-power transducer "
+                        f"({p_required_atm:.0f} atm output).")
+
     return [Warning(
         category="off_resonance",
         severity="warning",
@@ -341,9 +366,11 @@ def _check_off_resonance(s: Scenario) -> list[Warning]:
             f"drive frequency {f_drive:.0f} Hz is outside the chamber "
             f"Q-bandwidth of every radial mode (closest is mode n={n_label} "
             f"at {f_closest:.0f} Hz, bandwidth ±{bandwidth_closest:.1f} Hz, "
-            f"Δf = {delta:+.0f} Hz). "
+            f"Δf = {delta:+.0f} Hz, attenuation {atten:.0f}×). "
             f"All scanned modes: {mode_str}. "
-            "Expect 10-100× reduced effective P_A in chamber."
+            f"Simulator treats P_A = {p_at_bubble_atm:.2f} atm as the "
+            f"at-bubble pressure; the transducer would need to output "
+            f"{p_required_atm:.1f} atm for that to be physical{feasibility}"
         ),
         actionable_fix=(
             f"set drive.waveforms[*].f to {f_closest:.0f} Hz "
@@ -668,6 +695,25 @@ def _build_summary(sim: Any, observer_traces: dict, scenario: Scenario) -> Scena
     t_grid = np.linspace(sim.t[0], sim.t[-1], n_samples)
     pa_vals = np.array([p_a(float(ti)) for ti in t_grid])
     min_p_minus_pa = float(scenario.ambient.p_inf + np.min(pa_vals))  # additive convention
+
+    # Q-response attenuation factor + required transducer P_A — populated
+    # only when the drive is outside every chamber mode's bandwidth, so
+    # the headline can flag "this 'stable' hit needs an unrealistic
+    # transducer."
+    atten: Optional[float] = None
+    p_required_atm: Optional[float] = None
+    drv_combined = combine_drives(scenario.transducers, scenario.drive,
+                                    scenario._bubble_position(), scenario.chamber)
+    if drv_combined.P_A > 0.0:
+        modes = _chamber_resonant_modes(scenario.chamber, scenario.liquid, max_n=4)
+        Q = max(scenario.chamber.Q, 1.0)
+        if modes and not any(
+            abs(drv_combined.f - f_n) <= (f_n / Q) for f_n in modes
+        ):
+            f_closest = min(modes, key=lambda f_n: abs(f_n - drv_combined.f))
+            delta = drv_combined.f - f_closest
+            atten = float(math.sqrt(1.0 + (delta * 2.0 * Q / f_closest) ** 2))
+            p_required_atm = float((drv_combined.P_A / 101_325.0) * atten)
     return ScenarioSummary(
         R_max=R_max,
         R_min=R_min,
@@ -691,6 +737,8 @@ def _build_summary(sim: Any, observer_traces: dict, scenario: Scenario) -> Scena
         RT_index=RT_index,
         convergence_diagnostic=s.get("convergence_diagnostic"),
         min_p_minus_pa=min_p_minus_pa,
+        drive_off_resonance_atten=atten,
+        drive_required_transducer_atm=p_required_atm,
         expected_wall_lifetime_hours=None,  # §13 fills
         flags=[],
     )

@@ -81,6 +81,8 @@ def result_to_store(result: ScenarioResult) -> dict:
             "peak_voltage_PMT": dict(s.peak_voltage_PMT),
             "regime": s.regime,
             "regime_rationale": [list(t) for t in (s.regime_rationale or [])],
+            "drive_off_resonance_atten": s.drive_off_resonance_atten,
+            "drive_required_transducer_atm": s.drive_required_transducer_atm,
             "shape_stability_flag": s.shape_stability_flag,
             "parametric_stability_index": s.parametric_stability_index,
             "RT_index": s.RT_index,

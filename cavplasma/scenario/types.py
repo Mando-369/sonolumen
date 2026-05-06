@@ -284,6 +284,13 @@ class ScenarioSummary:
     # picked. None = no rationale captured (e.g. v1↔v2 path that bypasses
     # the suggestions classifier).
     regime_rationale: Optional[list] = None           # list[tuple[str, str, str]]
+    # Q-response attenuation factor and the transducer P_A that would be
+    # required to deliver the stated at-bubble P_A. Populated only when
+    # the drive is outside every chamber mode's Q-bandwidth; otherwise
+    # None. Surfaced in the headline so the user can spot "stable" hits
+    # that rely on an unrealistic transducer drive.
+    drive_off_resonance_atten: Optional[float] = None
+    drive_required_transducer_atm: Optional[float] = None
     # --- §13 fills these later ---------------------------------------------
     expected_wall_lifetime_hours: Optional[float] = None
     flags: list = field(default_factory=list)

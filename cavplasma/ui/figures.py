@@ -620,6 +620,15 @@ def headline_summary_text(payload: dict) -> list[tuple[str, str]]:
     flash = s.get("flash_FWHM_ns")
     if flash is not None:
         rows.append(("flash FWHM", f"{flash:.2f} ns"))
+    # P_A interpretation note — pulled from `drive_off_resonance_atten`
+    # if the warnings list flagged it. Helps the user spot when their
+    # "stable" hit relies on an unrealistic transducer drive.
+    atten = s.get("drive_off_resonance_atten")
+    if atten and atten > 1.5:
+        p_required = s.get("drive_required_transducer_atm", 0.0)
+        rows.append(("Q-attenuation",
+                      f"{atten:.0f}× off-mode (transducer needs "
+                      f"{p_required:.1f} atm to deliver the stated P_A)"))
     return rows
 
 
