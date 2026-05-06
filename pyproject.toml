@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cavplasma"
+version = "0.1.0.dev0"
+description = "Single-bubble cavitation plasma simulator (v1) — implementation of cavitation_research/11_simulator_spec.md"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Acoustic Plasma Reactor project" },
+]
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+plasma = ["plasmapy>=2024.2"]
+chemistry = ["cantera>=3.0"]
+config = ["pydantic>=2.6"]
+units = ["astropy>=6.0"]
+ui = [
+    "dash>=2.16",
+    "plotly>=5.20",
+    "dash-bootstrap-components>=1.5",
+    "waitress>=3.0",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-timeout>=2.2",
+]
+
+[tool.setuptools.packages.find]
+include = ["cavplasma*"]
+exclude = ["tests*", "examples*", "cavitation_research*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+timeout = 60
+addopts = "-ra"

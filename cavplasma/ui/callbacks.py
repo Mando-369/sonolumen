@@ -1,0 +1,688 @@
+"""Dash callbacks. §15.9 callback graph.
+
+The Dash @callback decorators are *thin wrappers* around plain Python
+functions defined here as `apply_*` / `render_*`. The wrappers live in
+`register_callbacks(app)`, which `app.py` calls at startup. Pure
+functions are independently importable and unit-testable without
+spinning up a Dash server.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import io
+import json
+import time
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+import dash
+import dash_bootstrap_components as dbc
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from dash import Input, Output, State, callback, ctx, dcc, html, no_update
+
+from cavplasma.config import AcousticDrive, BubbleSeed
+from cavplasma.liquids import preset as _liquid_preset
+from cavplasma.scenario import Scenario, presets as scenario_presets
+from cavplasma.scenario.types import (
+    BubblePopulation,
+    DriveSchedule,
+    PhysicsOptions,
+    NumericsOptions,
+)
+from cavplasma.ui import figures
+from cavplasma.ui.audio import hydrophone_to_wav, wav_to_data_uri
+from cavplasma.ui.state import (
+    result_to_store,
+    scenario_from_store,
+    scenario_to_store,
+)
+from cavplasma.ui.style import (
+    ANIMATION_FRAME_BUDGET,
+    NOTEBOOK_MAX_ENTRIES,
+    REGIME_COLOR,
+    REGIME_DESCRIPTION,
+    SEVERITY_COLOR,
+)
+
+
+# ===========================================================================
+# Scenario_store mutators (controls → scenario_store)
+# ===========================================================================
+def apply_controls(
+    scenario_payload: Optional[str],
+    *,
+    liquid_name: str,
+    ambient_T: float,
+    ambient_p: float,
+    drive_f_log10: float,
+    drive_pa_atm: float,
+    drive_cycles: int,
+    bubble_R0_log10: float,
+    gas_ar: float,
+    gas_h2o: float,
+    gas_air: float,
+    phys_bubble_eq: str,
+    phys_thermal: str,
+    phys_ionization: str,
+    num_rtol_log10: float,
+    num_conv: bool,
+) -> str:
+    """Apply control values to the scenario_store. Returns updated JSON."""
+    base = scenario_from_store(scenario_payload) or scenario_presets.sbsl_canonical()
+
+    # Liquid
+    try:
+        liquid = _liquid_preset(liquid_name)
+    except Exception:
+        liquid = base.liquid
+
+    # Ambient
+    ambient = dataclasses.replace(
+        base.ambient,
+        p_inf=ambient_p * 1_000.0,    # kPa → Pa
+        T_inf=ambient_T,
+    )
+
+    # Drive — convert sliders back to SI
+    f_hz = 10.0 ** drive_f_log10 * 1_000.0     # slider was log10(f_kHz)
+    P_A_pa = drive_pa_atm * 101_325.0
+    new_waveforms: dict = {}
+    for tx_name, drv in base.drive.waveforms.items():
+        new_waveforms[tx_name] = dataclasses.replace(
+            drv, f=f_hz, P_A=P_A_pa, n_cycles=int(drive_cycles),
+        )
+    if not new_waveforms and base.transducers:
+        # Build a default waveform on the first transducer
+        new_waveforms = {base.transducers[0].name: AcousticDrive(
+            kind="sinusoid", f=f_hz, P_A=P_A_pa, n_cycles=int(drive_cycles),
+        )}
+    drive_schedule = dataclasses.replace(base.drive, waveforms=new_waveforms)
+
+    # Bubble — only update R0 + gas composition; preserve other seed fields.
+    pop = base.bubble_population
+    if pop.seed is not None:
+        R0_m = 10.0 ** bubble_R0_log10 * 1e-6
+        gas: dict = {}
+        if gas_ar:
+            gas["Ar"] = float(gas_ar)
+        if gas_h2o:
+            gas["H2O"] = float(gas_h2o)
+        if gas_air:
+            gas["N2"] = 0.78 * float(gas_air)
+            gas["O2"] = 0.21 * float(gas_air)
+            gas["Ar"] = float(gas_ar) + 0.0093 * float(gas_air)
+        if not gas:
+            gas = pop.seed.gas_composition
+        new_seed = dataclasses.replace(pop.seed, R0=R0_m, gas_composition=gas)
+        new_pop = dataclasses.replace(pop, seed=new_seed)
+    else:
+        new_pop = pop
+
+    physics = dataclasses.replace(
+        base.physics_options,
+        bubble_eq=phys_bubble_eq,
+        thermal_model=phys_thermal,
+        ionization_model=phys_ionization,
+    )
+    numerics = dataclasses.replace(
+        base.numerics,
+        rtol=10.0 ** num_rtol_log10,
+        convergence_test=bool(num_conv),
+    )
+
+    new_scenario = dataclasses.replace(
+        base,
+        liquid=liquid,
+        ambient=ambient,
+        drive=drive_schedule,
+        bubble_population=new_pop,
+        physics_options=physics,
+        numerics=numerics,
+    )
+    return scenario_to_store(new_scenario)
+
+
+def apply_preset(name: str) -> str:
+    """Replace the scenario_store with a named §12.8 preset."""
+    factory = getattr(scenario_presets, name, None)
+    if factory is None:
+        raise ValueError(f"unknown preset {name!r}")
+    return scenario_to_store(factory())
+
+
+# ===========================================================================
+# Run (TEST button) — Scenario → ScenarioResult
+# ===========================================================================
+def run_test(scenario_payload: Optional[str]) -> tuple[Optional[dict], str]:
+    """Execute scenario.run() and pack into a result_store dict."""
+    s = scenario_from_store(scenario_payload)
+    if s is None:
+        return None, "no scenario loaded"
+    t0 = time.time()
+    try:
+        result = s.run()
+    except ValueError as exc:
+        return None, f"validate() blocked the run: {exc}"
+    except Exception as exc:                                            # noqa: BLE001
+        return None, f"run failed: {type(exc).__name__}: {exc}"
+    elapsed = time.time() - t0
+    payload = result_to_store(result)
+    payload["wall_clock_s"] = elapsed
+    payload["timestamp"] = datetime.now(timezone.utc).isoformat()
+    # Stash the v1 spectrum trace separately so the spectrum figure can
+    # rebuild it server-side (too big to round-trip via dcc.Store).
+    payload["__has_v1_result__"] = True
+    return payload, f"ran in {elapsed:.2f} s"
+
+
+# ===========================================================================
+# Render — figures + right-column cards
+# ===========================================================================
+def render_figures(
+    scenario_payload: Optional[str],
+    result_payload: Optional[dict],
+    server_v1_result: Optional[Any] = None,
+) -> dict:
+    """Build all six centre-column figures from the stores. Returns a dict
+    keyed by graph id → Figure. `server_v1_result` is the live in-memory
+    ScenarioResult (carries the dense spectrum) used for the spectrum
+    surface; rebuilt by `_run_test_and_cache` in the live app.
+    """
+    s = scenario_from_store(scenario_payload)
+    out: dict = {}
+    out["chamber_fig"] = figures.chamber_figure(s) if s else _empty(
+        "Chamber cross-section")
+    out["field_fig"] = (
+        figures.standing_wave_field_figure(s, t_anim=0.0) if s else _empty(
+            "Standing wave field")
+    )
+    if result_payload:
+        out["bubble_fig"] = figures.bubble_dynamics_figure(result_payload)
+        out["plasma_fig"] = figures.plasma_diagnostics_figure(result_payload)
+        out["detector_fig"] = figures.detector_traces_figure(result_payload)
+    else:
+        out["bubble_fig"] = _empty("Bubble dynamics")
+        out["plasma_fig"] = _empty("Plasma diagnostics")
+        out["detector_fig"] = _empty("Detector traces")
+    if server_v1_result is not None:
+        out["spectrum_fig"] = figures.spectrum_surface_figure(server_v1_result)
+    elif result_payload:
+        out["spectrum_fig"] = _empty("Spectrum surface (preview only)")
+    else:
+        out["spectrum_fig"] = _empty("Spectrum surface")
+    return out
+
+
+def render_regime_card(result_payload: Optional[dict]) -> dbc.Alert:
+    if not result_payload:
+        return dbc.Alert("No run yet — click TEST to populate.",
+                         color="secondary")
+    regime = result_payload.get("summary", {}).get("regime", "stable_spherical")
+    color = {
+        "stable_spherical": "success",
+        "marginal":         "warning",
+        "unstable_likely":  "danger",
+        "sub_blake":        "secondary",
+        "transducer_limited": "danger",
+    }.get(regime, "info")
+    desc = REGIME_DESCRIPTION.get(regime, "")
+    return dbc.Alert([html.B(regime), html.Br(), desc], color=color)
+
+
+def render_headline_table(result_payload: Optional[dict]) -> list:
+    if not result_payload:
+        return []
+    rows = figures.headline_summary_text(result_payload)
+    return [
+        html.Tr([html.Td(label), html.Td(value)]) for label, value in rows
+    ]
+
+
+def render_suggestions(result_payload: Optional[dict]) -> list:
+    if not result_payload:
+        return [html.Em("No run yet.")]
+    items: list = []
+    for sg in result_payload.get("suggestions", []):
+        if sg["category"] == "caveat":
+            continue
+        sev_color = SEVERITY_COLOR.get(sg["severity"], "#444")
+        items.append(html.Div([
+            html.Div([
+                html.Span(f"[{sg['severity']}/{sg['rule_id']}]",
+                          style={"color": sev_color, "fontWeight": "bold"}),
+                html.Span(" "),
+                html.Span(sg["message"]),
+            ]),
+            html.Div([
+                html.Em(sg["rationale"]), html.Br(),
+                html.Small(sg["dossier_ref"], style={"color": "#aaa"}),
+            ], style={"marginLeft": "1em", "fontSize": "0.85em"}),
+        ], className="mb-2"))
+    if not items:
+        items = [html.Em("No actionable suggestions for this run.")]
+    return items
+
+
+def render_caveats(result_payload: Optional[dict]) -> list:
+    if not result_payload:
+        return []
+    items: list = []
+    for sg in result_payload.get("suggestions", []):
+        if sg["category"] != "caveat":
+            continue
+        items.append(html.Div([
+            html.Span(f"[{sg['rule_id']}] ", style={"fontWeight": "bold"}),
+            html.Span(sg["message"]),
+            html.Br(),
+            html.Small(sg["dossier_ref"], style={"color": "#aaa"}),
+        ], className="mb-2"))
+    return items or [html.Em("(none)")]
+
+
+def render_material_summary(result_payload: Optional[dict]) -> list:
+    if not result_payload:
+        return []
+    pieces: list = []
+    er = result_payload.get("erosion")
+    if er:
+        pieces.append(html.Div([
+            html.B("Wall: "),
+            f"{er['material_name']} · severity {er['severity']:.2e} · ",
+            f"T_inc {er['T_inc_hours']:.0f} h · ",
+            f"MDPR {er['MDPR_um_per_h']:.2f} µm/h",
+        ]))
+    tx = result_payload.get("transducer_lifetime")
+    if tx:
+        pieces.append(html.Div([
+            html.B("Transducer: "),
+            f"{tx['grade']} · {tx['lifetime_hours']:.0f} h · ",
+            f"T_steady {tx['steady_state_T_K']:.0f} K · {tx['notes']}",
+        ]))
+    th = result_payload.get("thermal_state")
+    if th:
+        pieces.append(html.Div([
+            html.B("Thermal: "),
+            f"ΔT {th['delta_T_steady_K']:.1f} K · ",
+            f"τ {th['time_constant_s']:.0f} s · ",
+            ("will boil" if th["will_boil"] else "stable"),
+        ]))
+    return pieces or [html.Em("(no §13 data)")]
+
+
+# ===========================================================================
+# Animation
+# ===========================================================================
+def animation_frame_figure(
+    scenario_payload: Optional[str],
+    result_payload: Optional[dict],
+    frame_idx: int,
+) -> go.Figure:
+    """Return the standing-wave field figure at the requested frame.
+
+    Frames cycle through one acoustic period at the current drive freq.
+    """
+    s = scenario_from_store(scenario_payload)
+    if s is None:
+        return _empty("Standing wave field")
+    drv = next(iter(s.drive.waveforms.values()), None)
+    if drv is None or drv.P_A == 0.0:
+        return figures.standing_wave_field_figure(s, t_anim=0.0)
+    period = 1.0 / drv.f
+    n_frames = ANIMATION_FRAME_BUDGET
+    t = (frame_idx % n_frames) / n_frames * period
+    return figures.standing_wave_field_figure(s, t_anim=t, n_grid=40)
+
+
+# ===========================================================================
+# Audio (Listen button)
+# ===========================================================================
+def render_audio(result_payload: Optional[dict]) -> str:
+    """Build a base64 data: URI from the hydrophone observer trace."""
+    if not result_payload:
+        return ""
+    obs = result_payload.get("observer_traces", {})
+    # Find a hydrophone-like observer trace
+    target = None
+    for name, sub in obs.items():
+        if "p_rad" in sub or "V" in sub:
+            target = sub
+            break
+    if target is None:
+        return ""
+    t = np.array(target.get("time", []))
+    V = np.array(target.get("V", target.get("p_rad", [])))
+    if len(t) < 2 or len(V) < 2:
+        return ""
+    wav = hydrophone_to_wav(t, V, pitch_factor=8.0,
+                             target_duration_s=2.0)
+    return wav_to_data_uri(wav)
+
+
+# ===========================================================================
+# Notebook (§15.6)
+# ===========================================================================
+def append_notebook(
+    result_payload: Optional[dict],
+    notebook: list,
+) -> list:
+    if not result_payload:
+        return notebook
+    summary = result_payload.get("summary", {})
+    entry = {
+        "timestamp": result_payload.get("timestamp", ""),
+        "wall_clock_s": result_payload.get("wall_clock_s", 0.0),
+        "regime": summary.get("regime", ""),
+        "T_peak_K": summary.get("T_peak_K", 0.0),
+        "n_e_peak": summary.get("n_e_peak", 0.0),
+        "photons_4pi": summary.get("photons_visible_4pi", 0.0),
+        "R_max_um": summary.get("R_max", 0.0) * 1e6,
+        "wall_mach": summary.get("wall_mach_peak", 0.0),
+    }
+    new_notebook = list(notebook or []) + [entry]
+    if len(new_notebook) > NOTEBOOK_MAX_ENTRIES:
+        new_notebook = new_notebook[-NOTEBOOK_MAX_ENTRIES:]
+    return new_notebook
+
+
+def render_notebook_table(notebook: list) -> Any:
+    if not notebook:
+        return html.Em("No runs yet.")
+    rows = [
+        html.Tr([
+            html.Td(i + 1),
+            html.Td(entry["timestamp"][:19].replace("T", " ")),
+            html.Td(f"{entry['wall_clock_s']:.2f}"),
+            html.Td(entry["regime"]),
+            html.Td(f"{entry['T_peak_K']:.0f}"),
+            html.Td(f"{entry['photons_4pi']:.2e}"),
+            html.Td(f"{entry['R_max_um']:.1f}"),
+            html.Td(f"{entry['wall_mach']:.2f}"),
+        ])
+        for i, entry in enumerate(notebook)
+    ]
+    return dbc.Table(
+        [
+            html.Thead(html.Tr([
+                html.Th("#"), html.Th("timestamp"), html.Th("wall (s)"),
+                html.Th("regime"), html.Th("T_peak (K)"),
+                html.Th("photons 4π"), html.Th("R_max (µm)"),
+                html.Th("Mach"),
+            ])),
+            html.Tbody(rows),
+        ],
+        striped=True, hover=True, size="sm",
+    )
+
+
+def notebook_to_csv_bytes(notebook: list) -> str:
+    if not notebook:
+        return "timestamp,wall_clock_s,regime,T_peak_K,n_e_peak,photons_4pi,R_max_m,wall_mach_peak\n"
+    df = pd.DataFrame(notebook)
+    buf = io.StringIO()
+    df.to_csv(buf, index=False)
+    return buf.getvalue()
+
+
+# ===========================================================================
+# Helpers
+# ===========================================================================
+def _empty(title: str) -> go.Figure:
+    from cavplasma.ui.style import PLOT_TEMPLATE
+    fig = go.Figure()
+    fig.update_layout(template=PLOT_TEMPLATE, title=title, height=220,
+                      margin=dict(l=20, r=20, t=40, b=40),
+                      annotations=[dict(text="(no data yet)", x=0.5, y=0.5,
+                                         xref="paper", yref="paper",
+                                         showarrow=False,
+                                         font=dict(size=12, color="#aaa"))])
+    return fig
+
+
+# ===========================================================================
+# Server-side cache for the latest live ScenarioResult — needed for the
+# spectrum surface (full em.S_t_lambda is too big for dcc.Store).
+# ===========================================================================
+_LATEST_RESULT: dict[str, Any] = {"result": None}
+
+
+def cache_latest_result(result: Any) -> None:
+    _LATEST_RESULT["result"] = result
+
+
+def latest_cached_result() -> Optional[Any]:
+    return _LATEST_RESULT.get("result")
+
+
+# ===========================================================================
+# Callback registration — called by app.py
+# ===========================================================================
+def register_callbacks(app: Any) -> None:
+    """Wire all @callback decorators onto the Dash app."""
+
+    # Initialise scenario_store on first load
+    @app.callback(
+        Output("scenario_store", "data", allow_duplicate=True),
+        Input("preset_dropdown", "value"),
+        prevent_initial_call=True,
+    )
+    def _load_preset(name):                                              # noqa: ANN001
+        if not name:
+            return no_update
+        return apply_preset(name)
+
+    # Apply control values (debounced via Dash's natural batching)
+    @app.callback(
+        Output("scenario_store", "data"),
+        Input("liquid_dropdown", "value"),
+        Input("ambient_T", "value"),
+        Input("ambient_p", "value"),
+        Input("drive_f", "value"),
+        Input("drive_pa", "value"),
+        Input("drive_cycles", "value"),
+        Input("bubble_R0", "value"),
+        Input("gas_ar", "value"),
+        Input("gas_h2o", "value"),
+        Input("gas_air", "value"),
+        Input("phys_bubble_eq", "value"),
+        Input("phys_thermal", "value"),
+        Input("phys_ionization", "value"),
+        Input("num_rtol", "value"),
+        Input("num_conv", "value"),
+        State("scenario_store", "data"),
+    )
+    def _apply_controls(*args):                                          # noqa: ANN001
+        scenario_payload = args[-1]
+        keys = (
+            "liquid_name", "ambient_T", "ambient_p", "drive_f_log10",
+            "drive_pa_atm", "drive_cycles", "bubble_R0_log10",
+            "gas_ar", "gas_h2o", "gas_air", "phys_bubble_eq",
+            "phys_thermal", "phys_ionization", "num_rtol_log10", "num_conv",
+        )
+        kwargs = dict(zip(keys, args[:-1]))
+        return apply_controls(scenario_payload, **kwargs)
+
+    # TEST button → run + cache + populate result_store
+    @app.callback(
+        Output("result_store", "data"),
+        Output("run_status", "children"),
+        Input("run_button", "n_clicks"),
+        State("scenario_store", "data"),
+        prevent_initial_call=True,
+    )
+    def _run(n_clicks, scenario_payload):                                # noqa: ANN001
+        if not n_clicks:
+            return no_update, no_update
+        # Live run that also caches the dense ScenarioResult server-side
+        s = scenario_from_store(scenario_payload)
+        if s is None:
+            return None, "no scenario"
+        t0 = time.time()
+        try:
+            result = s.run()
+        except ValueError as exc:
+            return None, f"validate() blocked: {exc}"
+        except Exception as exc:                                         # noqa: BLE001
+            return None, f"run failed: {type(exc).__name__}: {exc}"
+        elapsed = time.time() - t0
+        cache_latest_result(result)
+        payload = result_to_store(result)
+        payload["wall_clock_s"] = elapsed
+        payload["timestamp"] = datetime.now(timezone.utc).isoformat()
+        return payload, f"ran in {elapsed:.2f} s"
+
+    # Render figures from stores
+    @app.callback(
+        Output("chamber_fig", "figure"),
+        Output("bubble_fig", "figure"),
+        Output("plasma_fig", "figure"),
+        Output("spectrum_fig", "figure"),
+        Output("detector_fig", "figure"),
+        Output("field_fig", "figure"),
+        Input("scenario_store", "data"),
+        Input("result_store", "data"),
+    )
+    def _render(scenario_payload, result_payload):                      # noqa: ANN001
+        figs = render_figures(scenario_payload, result_payload,
+                               server_v1_result=latest_cached_result())
+        return (figs["chamber_fig"], figs["bubble_fig"], figs["plasma_fig"],
+                figs["spectrum_fig"], figs["detector_fig"], figs["field_fig"])
+
+    # Render right column
+    @app.callback(
+        Output("regime_card", "children"),
+        Output("headline_table", "children"),
+        Output("suggestions_list", "children"),
+        Output("caveats_list", "children"),
+        Output("material_summary", "children"),
+        Input("result_store", "data"),
+    )
+    def _render_results(result_payload):                                # noqa: ANN001
+        return (
+            render_regime_card(result_payload),
+            render_headline_table(result_payload),
+            render_suggestions(result_payload),
+            render_caveats(result_payload),
+            render_material_summary(result_payload),
+        )
+
+    # Listen button → set <audio> src to base64 WAV
+    @app.callback(
+        Output("audio_player", "src"),
+        Input("listen_btn", "n_clicks"),
+        State("result_store", "data"),
+        prevent_initial_call=True,
+    )
+    def _listen(n_clicks, result_payload):                              # noqa: ANN001
+        if not n_clicks:
+            return no_update
+        return render_audio(result_payload)
+
+    # Animation tick — update field figure
+    @app.callback(
+        Output("anim_state", "data"),
+        Input("anim_toggle", "n_clicks"),
+        State("anim_state", "data"),
+        prevent_initial_call=True,
+    )
+    def _toggle_anim(n_clicks, state):                                  # noqa: ANN001
+        new_playing = not (state or {}).get("playing", False)
+        return {"playing": new_playing,
+                "frame": (state or {}).get("frame", 0)}
+
+    @app.callback(
+        Output("animation_tick", "disabled"),
+        Output("anim_status", "children"),
+        Input("anim_state", "data"),
+    )
+    def _anim_enabled(state):                                           # noqa: ANN001
+        playing = (state or {}).get("playing", False)
+        return (not playing,
+                "playing" if playing else "paused")
+
+    @app.callback(
+        Output("field_fig", "figure", allow_duplicate=True),
+        Output("anim_state", "data", allow_duplicate=True),
+        Input("animation_tick", "n_intervals"),
+        State("anim_state", "data"),
+        State("scenario_store", "data"),
+        State("result_store", "data"),
+        prevent_initial_call=True,
+    )
+    def _tick(n_intervals, state, scenario_payload, result_payload):    # noqa: ANN001
+        if not (state or {}).get("playing", False):
+            return no_update, no_update
+        frame_idx = (state or {}).get("frame", 0) + 1
+        fig = animation_frame_figure(scenario_payload, result_payload, frame_idx)
+        return fig, {"playing": True, "frame": frame_idx}
+
+    # Notebook
+    @app.callback(
+        Output("notebook_store", "data"),
+        Input("result_store", "data"),
+        State("notebook_store", "data"),
+    )
+    def _append_notebook(result_payload, notebook):                     # noqa: ANN001
+        return append_notebook(result_payload, notebook or [])
+
+    @app.callback(
+        Output("notebook_table", "children"),
+        Input("notebook_store", "data"),
+    )
+    def _render_notebook(notebook):                                     # noqa: ANN001
+        return render_notebook_table(notebook or [])
+
+    @app.callback(
+        Output("notebook_export_download", "data"),
+        Input("notebook_export_btn", "n_clicks"),
+        State("notebook_store", "data"),
+        prevent_initial_call=True,
+    )
+    def _export_notebook(n_clicks, notebook):                           # noqa: ANN001
+        if not n_clicks:
+            return no_update
+        csv_text = notebook_to_csv_bytes(notebook or [])
+        return dict(content=csv_text, filename="cavplasma_notebook.csv")
+
+    @app.callback(
+        Output("notebook_store", "data", allow_duplicate=True),
+        Input("notebook_clear_btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _clear_notebook(n_clicks):                                      # noqa: ANN001
+        if not n_clicks:
+            return no_update
+        return []
+
+    # Save / Load
+    @app.callback(
+        Output("save_download", "data"),
+        Input("save_btn", "n_clicks"),
+        State("scenario_store", "data"),
+        prevent_initial_call=True,
+    )
+    def _save(n_clicks, scenario_payload):                              # noqa: ANN001
+        if not n_clicks:
+            return no_update
+        return dict(content=scenario_payload or "{}",
+                    filename="cavplasma_scenario.json")
+
+    @app.callback(
+        Output("scenario_store", "data", allow_duplicate=True),
+        Input("load_upload", "contents"),
+        prevent_initial_call=True,
+    )
+    def _load(contents):                                                # noqa: ANN001
+        if not contents:
+            return no_update
+        try:
+            import base64
+            _header, b64 = contents.split(",", 1)
+            text = base64.b64decode(b64).decode("utf-8")
+            # Validate
+            Scenario.from_json(text)
+            return text
+        except Exception:                                                # noqa: BLE001
+            return no_update
