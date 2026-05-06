@@ -260,7 +260,17 @@ class Scenario:
         return (0.0, 0.0, 0.0)        # default: pressure antinode = chamber centre
 
     def _compose_simulation_config(self) -> SimulationConfig:
-        """Project the Scenario down to a v1 SimulationConfig."""
+        """Project the Scenario down to a v1 SimulationConfig.
+
+        Applies the §17/§18/§19 (Q4/Q11/Q12) sound-speed correction
+        before handing off to the v1 runner: when the user moves
+        `T_inf` or `p_inf` away from calibration (20 °C, 1 atm), the
+        liquid's `c` is updated via IAPWS (pure water) / Mackenzie
+        (seawater) / Tait (any other liquid). At calibration the
+        delta is exactly zero, so the SBSL canonical case stays
+        bit-identical to v1.
+        """
+        from cavplasma.liquids import liquid_with_corrections
         seed = self._effective_seed()
         if seed is None:
             raise ValueError(
@@ -270,8 +280,9 @@ class Scenario:
             self.transducers, self.drive,
             self._bubble_position(), self.chamber,
         )
+        corrected_liquid = liquid_with_corrections(self.liquid, self.ambient)
         return SimulationConfig(
-            liquid=self.liquid,
+            liquid=corrected_liquid,
             ambient=self.ambient,
             drive=drive,
             bubble_seed=seed,
