@@ -528,7 +528,7 @@ def headline_summary_text(payload: dict) -> list[tuple[str, str]]:
         rows.append((f"photons @ {first_key}", f"{pdc[first_key]:.2e}"))
     lifetime = s.get("expected_wall_lifetime_hours")
     if lifetime is not None:
-        rows.append(("wall lifetime", f"{lifetime:.0f} h"))
+        rows.append(("wall lifetime", _format_lifetime(lifetime)))
     flash = s.get("flash_FWHM_ns")
     if flash is not None:
         rows.append(("flash FWHM", f"{flash:.2f} ns"))
@@ -538,6 +538,27 @@ def headline_summary_text(payload: dict) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def _format_lifetime(hours: float) -> str:
+    """Format a §13 wall lifetime in human-readable units.
+
+    Values returned by `predict_erosion_rate` for tabletop SBSL can hit
+    10¹⁰+ hours (severity factor S → 0). Rendering the raw integer is
+    misleading; clip past 10⁵ h (~11 years continuous, well beyond any
+    real chamber's service life) and label "no erosion concern".
+    """
+    if hours is None or hours <= 0.0:
+        return "—"
+    if hours >= 1.0e6:
+        return "no erosion concern (S → 0)"
+    if hours >= 1.0e5:
+        return f"> 10⁵ h ({hours/(24*365.25):.0f} yr — no concern)"
+    if hours >= 1.0e4:
+        return f"{hours:,.0f} h ({hours/(24*365.25):.1f} yr continuous)"
+    if hours >= 100.0:
+        return f"{hours:,.0f} h"
+    return f"{hours:.1f} h"
+
+
 def _empty_figure(title: str) -> go.Figure:
     fig = go.Figure()
     fig.update_layout(
