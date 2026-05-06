@@ -28,12 +28,13 @@ from cavplasma.ui.style import (
 # §15.4.1 — Chamber cross-section
 # ---------------------------------------------------------------------------
 def chamber_figure(scenario: Scenario, t_anim: Optional[float] = None) -> go.Figure:
-    """2-D cross-section: chamber outline + transducers + bubble + observers.
+    """2-D x-y cross-section of the chamber.
 
-    Static at `t_anim=None`; when an `t_anim` is supplied, the bubble's
-    rendered radius shrinks/expands sinusoidally for a quick preview
-    (full radius traces require a `result` payload — see
-    `chamber_animation_figure`).
+    Plots the chamber outline, transducer positions (squares), the bubble
+    seed position (yellow disk, R-scaled for visibility), and observer
+    positions (diamonds). Multiple objects with the same x-y position
+    (i.e. they differ only in z) get fanned-out labels with leader
+    lines so the names stay readable.
     """
     fig = go.Figure()
     chamber = scenario.chamber
@@ -56,31 +57,22 @@ def chamber_figure(scenario: Scenario, t_anim: Optional[float] = None) -> go.Fig
             hoverinfo="skip", showlegend=False, name="chamber",
         ))
 
-    # Transducers
-    for tx in scenario.transducers:
-        x_tx, y_tx, _ = tx.position
-        fig.add_trace(go.Scatter(
-            x=[x_tx], y=[y_tx], mode="markers+text",
-            marker=dict(symbol="square", size=18, color="#1f77b4"),
-            text=[tx.name], textposition="top center",
-            name=f"transducer {tx.name}", hoverinfo="text",
-        ))
-
-    # Bubble (renders at a representative size)
+    # Bubble (renders at a representative size, drawn first so the
+    # transducer/observer markers sit on top of it).
     pop = scenario.bubble_population
     if pop.seed_position is not None:
         bx, by, _ = pop.seed_position
     else:
         bx, by = 0.0, 0.0
     if pop.seed is not None:
-        # Render bubble at 100× R₀ for visibility (typical R_max ~ 10 R₀)
+        # Render bubble at 50× R₀ for visibility (typical R_max ~ 10 R₀)
         bubble_size_m = 50.0 * pop.seed.R0
+        bubble_label = f"bubble (R₀ = {pop.seed.R0*1e6:.2f} µm)"
     else:
         bubble_size_m = 0.001
+        bubble_label = "bubble"
     if t_anim is not None:
-        # Rough sinusoidal animation for the preview
         bubble_size_m *= (1.0 + 0.5 * math.sin(2.0 * math.pi * t_anim))
-    # Plot bubble as a circle approximation
     btheta = np.linspace(0.0, 2.0 * math.pi, 60)
     bx_c = bx + bubble_size_m * np.cos(btheta)
     by_c = by + bubble_size_m * np.sin(btheta)
@@ -89,30 +81,126 @@ def chamber_figure(scenario: Scenario, t_anim: Optional[float] = None) -> go.Fig
         fillcolor="rgba(255, 200, 0, 0.4)",
         line=dict(color="#ffae00", width=1),
         name="bubble", hoverinfo="text",
-        text=f"R₀ = {pop.seed.R0*1e6:.2f} µm" if pop.seed else "",
+        text=bubble_label, showlegend=False,
     ))
 
-    # Observers
+    # Collect every labelled point (transducers, observers, bubble) into a
+    # uniform list so we can spread overlapping labels in one pass.
+    items: list[dict] = []
+    items.append({
+        "x": bx, "y": by, "label": bubble_label,
+        "kind": "bubble", "symbol": "circle-open",
+        "size": 4, "color": "#ffae00",
+    })
+    for tx in scenario.transducers:
+        items.append({
+            "x": tx.position[0], "y": tx.position[1], "label": tx.name,
+            "kind": "transducer", "symbol": "square",
+            "size": 14, "color": "#268bd2",     # solarized blue
+        })
     for obs in scenario.observers:
-        ox, oy, _ = obs.position
+        items.append({
+            "x": obs.position[0], "y": obs.position[1], "label": obs.name,
+            "kind": "observer", "symbol": "diamond",
+            "size": 11, "color": "#dc322f",     # solarized red
+        })
+
+    # One Scatter trace per kind so the legend / hover are clean.
+    for kind in ("transducer", "observer"):
+        kind_items = [it for it in items if it["kind"] == kind]
+        if not kind_items:
+            continue
         fig.add_trace(go.Scatter(
-            x=[ox], y=[oy], mode="markers+text",
-            marker=dict(symbol="diamond", size=12, color="#d62728"),
-            text=[obs.name], textposition="bottom center",
-            name=f"observer {obs.name}", hoverinfo="text",
+            x=[it["x"] for it in kind_items],
+            y=[it["y"] for it in kind_items],
+            mode="markers",
+            marker=dict(
+                symbol=kind_items[0]["symbol"],
+                size=kind_items[0]["size"],
+                color=kind_items[0]["color"],
+                line=dict(color="#002b36", width=1),
+            ),
+            text=[it["label"] for it in kind_items],
+            hoverinfo="text",
+            showlegend=False,
+            name=kind,
         ))
 
+    # Fan labels out so co-located items stay readable.
+    annotations = _fan_out_labels(items, R)
     fig.update_layout(
         title="Chamber cross-section",
         template=PLOT_TEMPLATE,
         height=PLOT_HEIGHT_MED,
-        xaxis=dict(scaleanchor="y", scaleratio=1, range=[-1.2 * R, 1.2 * R],
+        xaxis=dict(scaleanchor="y", scaleratio=1, range=[-1.4 * R, 1.4 * R],
                    title="x (m)", showgrid=True),
-        yaxis=dict(range=[-1.2 * R, 1.2 * R], title="y (m)", showgrid=True),
+        yaxis=dict(range=[-1.4 * R, 1.4 * R], title="y (m)", showgrid=True),
         showlegend=False,
         margin=dict(l=40, r=20, t=40, b=40),
+        annotations=annotations,
     )
     return fig
+
+
+def _fan_out_labels(items: list[dict], chamber_radius: float) -> list[dict]:
+    """Build collision-aware Plotly annotations for `items`.
+
+    Items at the same (x, y) within ≈ 1 % of the chamber radius are
+    treated as a single *cluster*; their labels are fanned around the
+    cluster centre with leader lines. Solo items get a plain offset
+    label with no arrow.
+    """
+    if not items:
+        return []
+    tol = max(chamber_radius * 0.01, 1e-6)
+    # Cluster by snapped (x, y).
+    clusters: dict[tuple[float, float], list[int]] = {}
+    for i, it in enumerate(items):
+        key = (round(it["x"] / tol) * tol, round(it["y"] / tol) * tol)
+        clusters.setdefault(key, []).append(i)
+
+    annotations: list[dict] = []
+    # Cardinal pixel offsets used when fanning a cluster of N labels.
+    fan_offsets = [
+        (60,  -10), (60,  20), (60,  50),         # right side, top→bottom
+        (-60, -10), (-60, 20), (-60, 50),         # left side
+        (0,  -45), (0,   45),                      # straight up / down
+    ]
+
+    for (cx, cy), indices in clusters.items():
+        if len(indices) == 1:
+            it = items[indices[0]]
+            # Solo item — small unobtrusive label, no arrow
+            annotations.append(dict(
+                x=cx, y=cy, xref="x", yref="y",
+                text=it["label"],
+                showarrow=False,
+                yshift=-18 if it["kind"] == "observer" else 18,
+                font=dict(size=10, color="#aaaaaa"),
+                align="center",
+            ))
+            continue
+        # Cluster: fan labels with leader lines.
+        for n, idx in enumerate(indices):
+            it = items[idx]
+            ax_px, ay_px = fan_offsets[n % len(fan_offsets)]
+            annotations.append(dict(
+                x=cx, y=cy, xref="x", yref="y",
+                text=it["label"],
+                showarrow=True,
+                arrowhead=0,
+                arrowwidth=1,
+                arrowcolor="#586e75",                       # solarized base01
+                ax=ax_px, ay=ay_px,
+                axref="pixel", ayref="pixel",
+                xanchor="left" if ax_px > 0 else ("right" if ax_px < 0 else "center"),
+                yanchor="middle",
+                font=dict(size=10, color="#cccccc"),
+                bgcolor="rgba(0, 43, 54, 0.8)",             # solarized base03 + alpha
+                bordercolor="rgba(0, 0, 0, 0)",
+                borderpad=2,
+            ))
+    return annotations
 
 
 # ---------------------------------------------------------------------------
