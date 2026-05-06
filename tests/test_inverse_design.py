@@ -90,3 +90,78 @@ def test_refine_design_grid_size_matches_request():
                                     n_amplitude=2, n_R0=2)
     # 2×2 grid = 4 evaluations
     assert diag["n_evaluations"] == 4
+
+
+# ---------------------------------------------------------------------------
+# Live status chip — analytical regime predictor (no forward simulation)
+# ---------------------------------------------------------------------------
+def test_live_predictor_canonical_sbsl_lands_green():
+    """SBSL canonical (29.6 kHz on-mode, 1.32 atm, 4.5 µm) must read
+    'in SBSL band' with success severity. Used to false-positive on
+    the off-resonance check before the threshold was relaxed."""
+    from cavplasma.ui.callbacks import _classify_live
+    sev, msg = _classify_live(
+        drive_f_hz=29640.0, drive_pa_atm=1.32, R0_m=4.5e-6, p_inf_atm=1.0,
+    )
+    assert sev == "success", f"canonical SBSL must read green, got {sev}: {msg}"
+    assert "SBSL band" in msg
+
+
+def test_live_predictor_flags_far_off_resonance():
+    """A 1 MHz drive on a 5 cm chamber must trigger danger severity."""
+    from cavplasma.ui.callbacks import _classify_live
+    sev, msg = _classify_live(
+        drive_f_hz=1.0e6, drive_pa_atm=2.0, R0_m=4.5e-6,
+    )
+    assert sev == "danger", f"1 MHz drive must read danger, got {sev}"
+    assert "off-resonance" in msg
+
+
+def test_live_predictor_flags_sub_blake():
+    from cavplasma.ui.callbacks import _classify_live
+    sev, msg = _classify_live(
+        drive_f_hz=29640.0, drive_pa_atm=0.4, R0_m=4.5e-6,
+    )
+    assert sev == "secondary"
+    assert "sub-Blake" in msg
+
+
+def test_live_predictor_flags_unstable_at_high_p_a():
+    from cavplasma.ui.callbacks import _classify_live
+    sev, msg = _classify_live(
+        drive_f_hz=29640.0, drive_pa_atm=3.0, R0_m=4.5e-6,
+    )
+    assert sev == "danger"
+    assert "unstable" in msg
+
+
+def test_couple_sliders_drive_f_to_R0():
+    """Moving drive_f to 50 kHz with the canonical Minnaert ratio
+    should produce R₀ ≈ 2.4 µm (half of canonical, since f doubled)."""
+    from cavplasma.ui.callbacks import _adapt_partner_slider
+    new_f, new_R0 = _adapt_partner_slider(
+        triggered="drive_f",
+        drive_f_hz=50_000.0, drive_pa_atm=0.0, R0_m=4.5e-6,
+        p_inf_atm=1.0, gamma=5.0/3.0, rho=998.2,
+    )
+    assert new_f is None
+    assert 2.0e-6 < new_R0 < 3.0e-6, (
+        f"R₀ adaptation off: 50 kHz drive should give ~2.4 µm R₀, got "
+        f"{new_R0*1e6:.2f} µm"
+    )
+
+
+def test_couple_sliders_R0_to_drive_f():
+    """Moving R₀ to 2 µm should bump drive_f to ~60 kHz (Minnaert
+    proportional 1/R₀)."""
+    from cavplasma.ui.callbacks import _adapt_partner_slider
+    new_f, new_R0 = _adapt_partner_slider(
+        triggered="bubble_R0",
+        drive_f_hz=26500.0, drive_pa_atm=0.0, R0_m=2.0e-6,
+        p_inf_atm=1.0, gamma=5.0/3.0, rho=998.2,
+    )
+    assert new_R0 is None
+    assert 50_000 < new_f < 70_000, (
+        f"f adaptation off: 2 µm R₀ should give ~60 kHz drive, got "
+        f"{new_f:.0f} Hz"
+    )

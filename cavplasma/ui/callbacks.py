@@ -270,6 +270,142 @@ def render_figures(
     return out
 
 
+# ===========================================================================
+# Live coupling — analytical adaptation between the three core physics
+# sliders (drive_f, drive_pa, R₀). Lightweight: no forward simulation,
+# just Minnaert + Blake + R_max/R₀ algebra. Used by the auto-adapt
+# toggle in the Auto-design panel and by the always-on status chip.
+# ===========================================================================
+def _minnaert_constant(p_inf_pa: float, gamma: float, rho: float) -> float:
+    """Returns f_M × R₀ (Hz·m) for the Minnaert frequency.
+
+    f_M = (1/(2π R₀)) · √(3γ p_∞ / ρ), so f_M × R₀ is the proportionality
+    constant that depends only on (γ, p_∞, ρ) — i.e. on the gas + liquid
+    + ambient. We use this to maintain a fixed `drive/Minnaert` ratio
+    when the user moves drive_f or R₀ with the auto-adapt toggle on.
+    """
+    import math
+    return math.sqrt(3.0 * gamma * p_inf_pa / rho) / (2.0 * math.pi)
+
+
+def _blake_threshold_atm(R0_m: float, p_inf_atm: float = 1.0,
+                          sigma: float = 0.0728) -> float:
+    """Approximate Blake threshold P_A in atm for a bubble of radius R₀.
+
+    `P_B ≈ p_∞ × √(1 + (8σ/(3p_∞ R₀))³ × (4/27))` — simplified Blake,
+    ignoring viscous + non-condensable corrections. Adequate for a live
+    UI status chip; not a substitute for `cavplasma.seed.blake_threshold`.
+    """
+    import math
+    p_inf_pa = p_inf_atm * 101_325.0
+    surface_term = 2.0 * sigma / R0_m
+    if surface_term <= 0:
+        return p_inf_atm
+    P_B_pa = p_inf_pa * (1.0 + (4.0 / 27.0) * (surface_term / p_inf_pa) ** 1.5)
+    return P_B_pa / 101_325.0
+
+
+def _classify_live(drive_f_hz: float, drive_pa_atm: float, R0_m: float,
+                    p_inf_atm: float = 1.0,
+                    chamber_radius_m: float = 0.05,
+                    chamber_c: float = 1482.0,
+                    chamber_Q: float = 1000.0) -> tuple[str, str]:
+    """Return (severity, message) for the live status chip.
+
+    severity ∈ {"success", "warning", "danger", "secondary"}.
+
+    Rough analytical regime predictor — uses Blake threshold, off-
+    resonance attenuation, and a P_A/p_∞ → R_max/R₀ scaling to
+    decide which regime the configuration is heading toward, without
+    running the simulator.
+    """
+    import math
+
+    # 1. Sub-Blake check
+    P_B = _blake_threshold_atm(R0_m, p_inf_atm)
+    if drive_pa_atm < P_B:
+        return ("secondary",
+                f"sub-Blake — P_A {drive_pa_atm:.2f} atm below "
+                f"threshold ≈ {P_B:.2f} atm. Increase drive amplitude "
+                f"or reduce R₀.")
+
+    # 2. Off-resonance check — only warn for *severe* off-mode drives.
+    # Geometric eigenmodes are stricter than real chambers (which have
+    # structural compliance broadening Q-bandwidth), so let near-mode
+    # drives pass silently. Threshold = 250× attenuation, chosen so
+    # SBSL canonical (~212×) and the n=4 stable preset (~65×) don't
+    # false-positive but the user's 1 MHz / 10 kHz traps (>600×) fire.
+    modes = [n * chamber_c / (2.0 * chamber_radius_m) for n in (1, 2, 3, 4)]
+    f_closest = min(modes, key=lambda f: abs(f - drive_f_hz))
+    Δf = drive_f_hz - f_closest
+    atten = math.sqrt(1.0 + (Δf * 2.0 * chamber_Q / f_closest) ** 2)
+    if atten > 1000.0:
+        return ("danger",
+                f"far off-resonance ({atten:.0f}× attenuation; closest "
+                f"mode {f_closest/1000:.1f} kHz). Real-world drive at "
+                f"the bubble would be negligible.")
+    if atten > 250.0:
+        return ("warning",
+                f"off-resonance ({atten:.0f}× attenuation; closest mode "
+                f"{f_closest/1000:.1f} kHz). Move drive freq to a chamber "
+                f"mode for realistic transducer drive.")
+
+    # 3. Estimate R_max/R₀ from P_A/p_∞ — empirical fit calibrated
+    # against Lofstedt 1995 / Hilgenfeldt-Lohse SBSL data:
+    #   P_A/p_∞ = 1.32 → R_max/R₀ ≈ 8 (SBSL canonical)
+    #   P_A/p_∞ = 1.5  → R_max/R₀ ≈ 12 (Suslick H₂SO₄+Xe)
+    # Linear fit: R_max/R₀ ≈ 22 · (P_A/p_∞ - 1) + 1, clipped at 1.
+    pa_ratio = drive_pa_atm / p_inf_atm
+    if pa_ratio <= 1.0:
+        return ("warning",
+                f"drive/p_∞ ratio {pa_ratio:.2f} ≤ 1 — bubble pressure "
+                f"won't reverse. Increase drive_pa to push past p_∞.")
+    R_max_over_R0 = max(1.0, 22.0 * (pa_ratio - 1.0) + 1.0)
+
+    # 4. Predict regime from R_max/R₀
+    if R_max_over_R0 < 3.0:
+        return ("warning",
+                f"linear regime — R_max/R₀ ≈ {R_max_over_R0:.1f} < 3. "
+                f"Bubble won't collapse violently. Increase P_A.")
+    if R_max_over_R0 > 20.0:
+        return ("danger",
+                f"unstable likely — R_max/R₀ ≈ {R_max_over_R0:.1f} > 20. "
+                f"Shape modes will grow; bubble will fragment. Reduce P_A "
+                f"or R₀.")
+    if R_max_over_R0 > 12.0:
+        return ("warning",
+                f"violent regime — R_max/R₀ ≈ {R_max_over_R0:.1f} (5–12 "
+                f"is the sweet spot). Mach likely > 0.3. Reduce P_A.")
+
+    return ("success",
+            f"in SBSL band — R_max/R₀ ≈ {R_max_over_R0:.1f}, on-mode, "
+            f"above Blake. Click TEST to verify.")
+
+
+def _adapt_partner_slider(triggered: str,
+                            drive_f_hz: float, drive_pa_atm: float, R0_m: float,
+                            p_inf_atm: float, gamma: float, rho: float,
+                            ) -> tuple[Optional[float], Optional[float]]:
+    """Return (new_drive_f_hz, new_R0_m) where one is no_update.
+
+    Coupling rule: hold the user-touched slider fixed, adapt the
+    *other one of (drive_f, R₀)* so the drive/Minnaert ratio stays
+    constant. drive_pa is not adapted — user controls it independently.
+    """
+    K = _minnaert_constant(p_inf_atm * 101_325.0, gamma, rho)  # f_M·R₀ const
+    if triggered == "drive_f":
+        # Use the canonical SBSL drive/Minnaert ratio of 0.033.
+        # f_M_target = drive_f / 0.033 → R₀_target = K / f_M_target
+        f_M_target = drive_f_hz / 0.033
+        R0_target = K / f_M_target if f_M_target > 0 else R0_m
+        return None, R0_target
+    if triggered == "bubble_R0":
+        f_M_target = K / R0_m if R0_m > 0 else 1.0
+        f_drive_target = f_M_target * 0.033
+        return f_drive_target, None
+    return None, None
+
+
 def autodesign_find(target_T_kK: float, must_be_stable: bool,
                      max_transducer_atm: float,
                      base_scenario_payload: Optional[str],
@@ -1203,6 +1339,88 @@ def register_callbacks(app: Any) -> None:
             f"auto-design · target {T_target:.0f} kK · refined (3×3 grid)",
             status, diagnostic,
         )
+
+    # ----------------------------------------------------------------------
+    # Live status chip — always on. Predicts the regime analytically
+    # from (drive_f, drive_pa, R₀) without running the simulator, so the
+    # user gets instant feedback as they explore.
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output("couple_status_chip", "children"),
+        Input("drive_f", "value"),
+        Input("drive_pa", "value"),
+        Input("bubble_R0", "value"),
+        Input("ambient_p", "value"),
+    )
+    def _live_status_chip(f_log10, pa_atm, R0_log10, p_log10):           # noqa: ANN001
+        if any(v is None for v in (f_log10, pa_atm, R0_log10, p_log10)):
+            return no_update
+        f_hz = (10.0 ** float(f_log10)) * 1000.0           # log10(kHz) → Hz
+        R0_m = (10.0 ** float(R0_log10)) * 1e-6            # log10(µm) → m
+        p_atm = (10.0 ** float(p_log10))                   # log10(kPa) → kPa
+        p_atm = (p_atm * 1000.0) / 101_325.0               # → atm
+        severity, message = _classify_live(
+            f_hz, float(pa_atm), R0_m, p_inf_atm=p_atm,
+        )
+        # severity → bootstrap colour
+        return dbc.Alert(message, color=severity,
+                          className="py-1 mb-0",
+                          style={"fontSize": "0.85em"})
+
+    # ----------------------------------------------------------------------
+    # Auto-adapt — couple drive_f ↔ R₀ via the Minnaert relation. When
+    # the toggle is on, moving one of them updates the other to maintain
+    # `drive/Minnaert = 0.033` (SBSL canonical value). drive_pa is not
+    # coupled — user controls it independently. Equality guard breaks
+    # the loop (writing the same value as state → no_update).
+    # ----------------------------------------------------------------------
+    @app.callback(
+        Output("drive_f", "value", allow_duplicate=True),
+        Output("bubble_R0", "value", allow_duplicate=True),
+        Input("drive_f", "value"),
+        Input("bubble_R0", "value"),
+        State("couple_sliders_toggle", "value"),
+        State("ambient_p", "value"),
+        State("liquid_dropdown", "value"),
+        prevent_initial_call=True,
+    )
+    def _couple_sliders(f_log10, R0_log10, couple_on,                    # noqa: ANN001
+                          p_log10, liquid_name):
+        import math
+        if not couple_on:
+            return no_update, no_update
+        triggered = ctx.triggered_id
+        if triggered not in ("drive_f", "bubble_R0"):
+            return no_update, no_update
+        f_hz = (10.0 ** float(f_log10)) * 1000.0
+        R0_m = (10.0 ** float(R0_log10)) * 1e-6
+        p_atm = (10.0 ** float(p_log10)) * 1000.0 / 101_325.0
+        # Liquid lookup for ρ — fallback to water.
+        try:
+            from cavplasma.liquids import preset
+            liq = preset(liquid_name or "water")
+        except Exception:                                                # noqa: BLE001
+            from cavplasma.liquids import preset
+            liq = preset("water")
+        gamma = 5.0 / 3.0      # assume monatomic-Ar SBSL gas
+
+        new_f_hz, new_R0_m = _adapt_partner_slider(
+            triggered, f_hz, drive_pa_atm=0.0,
+            R0_m=R0_m, p_inf_atm=p_atm, gamma=gamma, rho=liq.rho,
+        )
+        new_f_log10 = no_update
+        new_R0_log10 = no_update
+        if new_f_hz is not None and new_f_hz > 0:
+            candidate = math.log10(new_f_hz / 1000.0)
+            # Equality guard — break loops when the adapted value
+            # matches what the slider already shows.
+            if abs(candidate - float(f_log10)) > 0.01:
+                new_f_log10 = round(candidate, 3)
+        if new_R0_m is not None and new_R0_m > 0:
+            candidate = math.log10(new_R0_m * 1e6)
+            if abs(candidate - float(R0_log10)) > 0.01:
+                new_R0_log10 = round(candidate, 3)
+        return new_f_log10, new_R0_log10
 
     # Save / Load
     @app.callback(

@@ -272,12 +272,17 @@ def _physics_controls() -> html.Div:
 def _autodesign_controls() -> html.Div:
     """Inverse-design panel — target outcome → parameters.
 
-    The user sets a target T_peak, ticks feasibility filters, and clicks
-    "Find parameters" to get a heuristic match (instant) or "Refine"
-    for a 9-point grid search around the heuristic (~15-30 s). The
-    found scenario replaces every other control via the same callback
-    chain that handles preset confirmation, so the user can inspect /
-    TEST / save the auto-designed scenario like any other config.
+    Two related features bundled together:
+
+      * One-shot inverse design: target T_peak + filters → heuristic
+        scenario (instant) or grid-refined scenario (~15 s).
+      * Live auto-adapt: when the toggle is on, moving any of the
+        three core physics sliders (drive_f, drive_pa, R₀) causes the
+        other two to track via simple analytical relations
+        (Minnaert frequency, Blake threshold, SBSL band scaling),
+        so the bubble stays in a useful regime as the user explores.
+        A live status chip warns when the configuration drifts off
+        the SBSL ridge — sub-Blake, off-resonance, or past Mach 0.3.
     """
     return html.Div([
         dbc.Label("Target T_peak (kK)"),
@@ -309,6 +314,20 @@ def _autodesign_controls() -> html.Div:
         html.Div(id="autodesign_diagnostic",
                   className="small mt-2",
                   style={"fontSize": "0.85em"}),
+        html.Hr(),
+        # Live coupling — one slider drives, others adapt.
+        dbc.Switch(id="couple_sliders_toggle", value=False,
+                   label="Auto-adapt: couple drive freq / R₀ / P_A"),
+        html.Div(
+            "When ON, moving one slider auto-adjusts the others to track "
+            "the SBSL ridge. Warns if the config falls outside a useful range.",
+            className="text-muted small mt-1",
+            style={"fontSize": "0.78em"},
+        ),
+        # Status chip — coloured pill summarising the current
+        # configuration's predicted regime, updated live as any of the
+        # three physics sliders moves (regardless of toggle state).
+        html.Div(id="couple_status_chip", className="mt-2"),
     ])
 
 
