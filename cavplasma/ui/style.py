@@ -17,15 +17,17 @@ REGIME_COLOR: dict[str, str] = {
     "marginal":           "#ff7f0e",   # amber
     "unstable_likely":    "#d62728",   # red
     "sub_blake":          "#7f7f7f",   # grey
+    "linear_oscillation": "#b58900",   # solarized yellow — "nothing happening"
     "transducer_limited": "#d62728",
 }
 
 
 REGIME_DESCRIPTION: dict[str, str] = {
-    "stable_spherical":   "Stable single-bubble dynamics — SBSL band.",
+    "stable_spherical":   "Stable single-bubble dynamics — SBSL band. T_peak in 10⁴ K range, growth ratio 5–20×.",
     "marginal":           "Past Mach 0.3 — collapse violence is shape-stability marginal.",
     "unstable_likely":    "Parametric / Rayleigh–Taylor index above 1; expect fragmentation.",
     "sub_blake":          "Drive does not exceed the Blake threshold — no cavitation.",
+    "linear_oscillation": "Bubble pumped near a resonance / off chamber Q-bandwidth — linear sloshing with no real collapse, no plasma. Move drive frequency or amplitude to escape.",
     "transducer_limited": "Requested drive exceeds transducer capacity.",
 }
 

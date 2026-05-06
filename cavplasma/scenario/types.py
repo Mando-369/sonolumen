@@ -235,6 +235,7 @@ class Suggestion:
 # ---------------------------------------------------------------------------
 RegimeLabel = Literal[
     "sub_blake",
+    "linear_oscillation",
     "stable_spherical",
     "marginal",
     "unstable_likely",

@@ -276,10 +276,11 @@ def render_regime_card(result_payload: Optional[dict]) -> dbc.Alert:
                          color="secondary")
     regime = result_payload.get("summary", {}).get("regime", "stable_spherical")
     color = {
-        "stable_spherical": "success",
-        "marginal":         "warning",
-        "unstable_likely":  "danger",
-        "sub_blake":        "secondary",
+        "stable_spherical":   "success",
+        "marginal":           "warning",
+        "unstable_likely":    "danger",
+        "sub_blake":          "secondary",
+        "linear_oscillation": "warning",     # dossier §16/§17 — yellow, not green
         "transducer_limited": "danger",
     }.get(regime, "info")
     desc = REGIME_DESCRIPTION.get(regime, "")

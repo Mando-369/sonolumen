@@ -52,6 +52,38 @@ def test_classifier_sbsl_canonical():
 # 2. Classifier — sub-Blake
 # ---------------------------------------------------------------------------
 @pytest.mark.timeout(30)
+def test_classifier_linear_oscillation_off_resonance():
+    """Regression for the false-positive 'stable_spherical' bug:
+    a 1 MHz drive on a 26.5 kHz chamber + small bubble lands in the
+    near-Minnaert linear-oscillation regime where T_peak ~ 850 K and
+    nothing collapses. The classifier used to fall through to
+    'stable_spherical' (green); it must now mark it 'linear_oscillation'
+    (yellow) so the user knows the bubble isn't actually doing SBSL.
+    """
+    import dataclasses
+    from cavplasma.config import AcousticDrive
+    from cavplasma.scenario.types import DriveSchedule
+    from cavplasma.suggestions.regime import classify as classify_regime
+
+    s = presets.sbsl_canonical()
+    drv = next(iter(s.drive.waveforms.values()))
+    # 1 MHz off-resonance + 2 atm — same shape as the user's preset.
+    drv_far = dataclasses.replace(drv, f=1.0e6, P_A=2.0 * 101_325.0)
+    s_lin = dataclasses.replace(
+        s,
+        drive=DriveSchedule(waveforms={list(s.drive.waveforms.keys())[0]: drv_far}),
+    )
+    r = s_lin.run()
+    public, internal = classify_regime(s_lin, r)
+    assert public == "linear_oscillation", (
+        f"off-resonance bubble must read 'linear_oscillation', got {public!r}. "
+        f"T_peak={r.summary.T_peak_K:.0f} K, "
+        f"R_max/R0={r.summary.R_max / s_lin.bubble_population.seed.R0:.2f}, "
+        f"Mach={r.summary.wall_mach_peak:.3f}"
+    )
+    assert internal == "linear_oscillation"
+
+
 def test_classifier_sub_blake():
     """§14.8 #2 — drive amplitude well below the Blake threshold for the
     nucleus → regime classified as 'sub_blake'."""

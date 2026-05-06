@@ -21,9 +21,15 @@ from cavplasma.scenario.types import RegimeLabel
 # Suggestion.message but not on ScenarioSummary.regime (which is a §12
 # Literal). When the classifier picks one of these, we map it to the
 # closest §12 label and surface the precise label via Suggestion.message.
+#
+# Note: `linear_oscillation` used to map to `stable_spherical` (public),
+# which was misleading — a near-resonance bubble that barely collapses
+# is "stable" only in the trivial sense that nothing dramatic happens.
+# It now maps to its own public label so the regime card can show
+# yellow ("nothing's collapsing — move the drive") instead of green.
 _INTERNAL_TO_PUBLIC: dict[str, RegimeLabel] = {
     "sub_blake": "sub_blake",
-    "linear_oscillation": "stable_spherical",
+    "linear_oscillation": "linear_oscillation",
     "stable_spherical": "stable_spherical",
     "violent_spherical": "marginal",
     "shape_unstable": "unstable_likely",
@@ -91,17 +97,32 @@ def classify(scenario: Any, result: Any) -> tuple[RegimeLabel, str]:
     if summary.RT_index is not None and summary.RT_index > 1.0:
         return _INTERNAL_TO_PUBLIC["shape_unstable"], "shape_unstable"
 
-    # linear oscillation: Blake exceeded but R_max/R₀ < 2 AND Mach < 0.01
-    if growth_ratio < 2.0 and Mach < 0.01:
+    # T_peak gate — without measurable plasma temperature, the bubble is
+    # not really "collapsing" in the sense SBSL asks for. < 1500 K means
+    # ambient-ish gas; treat as linear oscillation regardless of the
+    # geometric metrics. Real SBSL hits 1.5e4 – 4e4 K.
+    T_peak = summary.T_peak_K or 0.0
+    if T_peak < 1500.0:
+        return _INTERNAL_TO_PUBLIC["linear_oscillation"], "linear_oscillation"
+
+    # linear oscillation: bubble doesn't collapse meaningfully. This catches
+    # off-resonance / near-Minnaert sloshing where R_max/R₀ stays small
+    # OR the wall barely moves. Used to require Mach < 0.01 (too tight) —
+    # widened to 0.05 so configurations like "1 MHz drive on a 26.5 kHz
+    # chamber" don't slip into stable_spherical.
+    if growth_ratio < 3.0 or Mach < 0.05:
         return _INTERNAL_TO_PUBLIC["linear_oscillation"], "linear_oscillation"
 
     # violent_spherical: Mach > 0.3 with stable shape
     if Mach > 0.3:
         return _INTERNAL_TO_PUBLIC["violent_spherical"], "violent_spherical"
 
-    # stable_spherical: 5 ≤ R_max/R₀ ≤ 20 AND Mach < 0.3
+    # stable_spherical: 5 ≤ R_max/R₀ ≤ 20 AND Mach < 0.3 — textbook SBSL
     if 5.0 <= growth_ratio <= 20.0 and Mach < 0.3:
         return _INTERNAL_TO_PUBLIC["stable_spherical"], "stable_spherical"
 
-    # Fallback: stable but outside the textbook SBSL band
-    return _INTERNAL_TO_PUBLIC["stable_spherical"], "stable_spherical"
+    # Fallback: nothing matched cleanly. Don't pretend it's stable —
+    # admit uncertainty and route to "marginal". Was previously the
+    # source of false-positive green "stable_spherical" labels for
+    # weakly-collapsing or near-resonance configurations.
+    return _INTERNAL_TO_PUBLIC["over_eos"], "numerical_warning"
