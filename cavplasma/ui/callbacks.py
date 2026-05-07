@@ -977,6 +977,25 @@ def register_callbacks(app: Any) -> None:
         # if nothing has been loaded yet).
         return False, last_loaded
 
+    # Disable chamber_radius and chamber_Q sliders when the chosen
+    # geometry doesn't actually use them (open-bath / HIFU / pistol_jet).
+    # Avoids the user wondering why their changes have no effect.
+    @app.callback(
+        Output("chamber_radius_cm", "disabled"),
+        Output("chamber_Q", "disabled"),
+        Output("chamber_geom_note", "children"),
+        Input("chamber_geometry", "value"),
+    )
+    def _toggle_chamber_geom_controls(geometry):                         # noqa: ANN001
+        is_open_bath = geometry in ("pistol_jet", "hifu_focus", "horn_open_bath")
+        if is_open_bath:
+            note = ("open-bath / HIFU / pistol-jet: bubble is assumed at "
+                    "the focal antinode with full drive amplitude. "
+                    "radius and Q are not used by the current model.")
+        else:
+            note = ""
+        return is_open_bath, is_open_bath, note
+
     # Apply control values (debounced via Dash's natural batching)
     @app.callback(
         Output("scenario_store", "data"),

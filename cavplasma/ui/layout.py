@@ -148,9 +148,12 @@ def controls_panel() -> dbc.Card:
 def _chamber_controls() -> html.Div:
     """Chamber geometry / wall material / size / Q.
 
-    Lets the user swap the pistol-shrimp open-water sentinel for a
-    real chamber, set radius / wall material / Q. Wall-material names
-    map to entries in `cavplasma.material.materials.catalog()`.
+    radius and Q only enter the model for closed cavities (sphere /
+    cylinder_axial / cylinder_radial). For pistol-jet, HIFU focus,
+    and horn/open-bath geometries, the bubble is assumed to sit at
+    a focal antinode with full drive amplitude — radius and Q do
+    nothing in the current model. The two sliders are disabled in
+    that mode by `_toggle_chamber_geom_controls` in callbacks.py.
     """
     return html.Div([
         dbc.Label("Chamber geometry — `chamber_geometry` in dossier"),
@@ -166,6 +169,9 @@ def _chamber_controls() -> html.Div:
             ],
             value="sphere", clearable=False,
         ),
+        html.Div(id="chamber_geom_note",
+                  className="text-muted small mt-1",
+                  style={"fontSize": "0.78em", "fontStyle": "italic"}),
         html.Br(),
         dbc.Label("Chamber radius (cm) — `chamber_radius`"),
         dcc.Slider(
@@ -200,9 +206,9 @@ def _chamber_controls() -> html.Div:
                    value=1000, min=1, max=100000, step=10,
                    className="form-control form-control-sm"),
         html.Div(
-            "Q sets the chamber's acoustic ringing — high Q amplifies "
-            "on-resonance drives but tightens the bandwidth (typical "
-            "SBSL Pyrex sphere: 100–1000; HIFU focal spot: 5–50).",
+            "Q sets the chamber's acoustic ringing for closed cavities — "
+            "high Q amplifies on-resonance drives but tightens bandwidth "
+            "(typical SBSL Pyrex sphere: 100–1000).",
             className="text-muted small mt-1",
             style={"fontSize": "0.78em"},
         ),
