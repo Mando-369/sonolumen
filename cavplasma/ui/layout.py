@@ -189,19 +189,26 @@ def _ambient_controls() -> html.Div:
 
 
 def _drive_controls() -> html.Div:
+    # The drive_f slider's value IS the frequency in Hz (linear, no log).
+    # apply_controls reads it as a plain Hz value; nothing else needs to
+    # know about the slider scale. Range 1 kHz – 200 kHz at 100 Hz steps
+    # covers the SBSL operating regime densely; the auto-design panel can
+    # reach above this when the user genuinely needs MHz-range drives.
     return html.Div([
-        dbc.Label("Drive frequency f (kHz, log scale) "
-                  "— `drive_f` in dossier"),
+        dbc.Label("Drive frequency f (Hz) — `drive_f` in dossier"),
         dcc.Slider(
-            id="drive_f", min=0, max=3.7, value=1.42, step=0.05,
-            marks={0: "1", 1: "10", 1.4: "26.5", 2: "100", 3: "1k", 3.7: "5k"},
-            tooltip={"always_visible": False},
+            id="drive_f", min=1_000, max=200_000, value=26_500, step=100,
+            marks={1_000: "1 kHz", 15_000: "15 kHz", 26_500: "26.5 kHz",
+                   50_000: "50 kHz", 100_000: "100 kHz", 200_000: "200 kHz"},
+            tooltip={"always_visible": False,
+                     "template": "{value} Hz"},
         ),
         html.Br(),
         dbc.Label("Drive amplitude P_A (atm) — `drive_pa` in dossier"),
         dcc.Slider(
             id="drive_pa", min=0.1, max=10.0, value=1.32, step=0.05,
-            marks={0.5: "0.5", 1.0: "1", 1.32: "1.32", 3.0: "3", 10.0: "10"},
+            marks={0.5: "0.5 atm", 1.0: "1 atm", 1.32: "1.32 atm",
+                   3.0: "3 atm", 10.0: "10 atm"},
             tooltip={"always_visible": False},
         ),
         html.Br(),

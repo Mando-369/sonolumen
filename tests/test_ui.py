@@ -79,7 +79,7 @@ def test_drive_pa_slider_shifts_regime_classification():
     low_payload = apply_controls(
         base_payload,
         liquid_name="water", ambient_T=293, ambient_p=2.005,
-        drive_f_log10=1.42, drive_pa_atm=0.05, drive_cycles=8,
+        drive_f_hz=26_500, drive_pa_atm=0.05, drive_cycles=8,
         bubble_R0_log10=0.65, gas_ar=0.99, gas_h2o=0.01, gas_air=0.0,
         phys_bubble_eq="keller_miksis", phys_thermal="toegel",
         phys_ionization="stewart_pyatt",
@@ -88,7 +88,7 @@ def test_drive_pa_slider_shifts_regime_classification():
     high_payload = apply_controls(
         base_payload,
         liquid_name="water", ambient_T=293, ambient_p=2.005,
-        drive_f_log10=1.42, drive_pa_atm=1.32, drive_cycles=8,
+        drive_f_hz=26_500, drive_pa_atm=1.32, drive_cycles=8,
         bubble_R0_log10=0.65, gas_ar=0.99, gas_h2o=0.01, gas_air=0.0,
         phys_bubble_eq="keller_miksis", phys_thermal="toegel",
         phys_ionization="stewart_pyatt",

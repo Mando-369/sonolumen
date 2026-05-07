@@ -57,7 +57,7 @@ def apply_controls(
     liquid_name: str,
     ambient_T: float,
     ambient_p: float,
-    drive_f_log10: float,
+    drive_f_hz: float,
     drive_pa_atm: float,
     drive_cycles: int,
     bubble_R0_log10: float,
@@ -88,8 +88,8 @@ def apply_controls(
         T_inf=ambient_T,
     )
 
-    # Drive — convert sliders back to SI
-    f_hz = 10.0 ** drive_f_log10 * 1_000.0     # slider was log10(f_kHz)
+    # Drive — slider value is already in Hz; only convert P_A to Pa.
+    f_hz = float(drive_f_hz)
     P_A_pa = drive_pa_atm * 101_325.0
     new_waveforms: dict = {}
     for tx_name, drv in base.drive.waveforms.items():
@@ -170,11 +170,11 @@ def scenario_to_control_values(scenario: Scenario) -> dict:
 
     drv = next(iter(scenario.drive.waveforms.values()), None)
     if drv is not None:
-        drive_f_log10 = math.log10(max(drv.f, 1.0) / 1000.0)
+        drive_f_hz = float(drv.f)
         drive_pa_atm = drv.P_A / 101_325.0
         drive_cycles = drv.n_cycles
     else:
-        drive_f_log10 = 1.42
+        drive_f_hz = 26_500.0
         drive_pa_atm = 1.32
         drive_cycles = 8
 
@@ -192,7 +192,7 @@ def scenario_to_control_values(scenario: Scenario) -> dict:
         "liquid_dropdown":   scenario.liquid.name,
         "ambient_T":         scenario.ambient.T_inf,
         "ambient_p":         math.log10(p_inf_kpa),
-        "drive_f":           drive_f_log10,
+        "drive_f":           drive_f_hz,
         "drive_pa":          drive_pa_atm,
         "drive_cycles":      drive_cycles,
         "bubble_R0":         bubble_R0_log10,
@@ -959,7 +959,7 @@ def register_callbacks(app: Any) -> None:
     def _apply_controls(*args):                                          # noqa: ANN001
         scenario_payload = args[-1]
         keys = (
-            "liquid_name", "ambient_T", "ambient_p", "drive_f_log10",
+            "liquid_name", "ambient_T", "ambient_p", "drive_f_hz",
             "drive_pa_atm", "drive_cycles", "bubble_R0_log10",
             "gas_ar", "gas_h2o", "gas_air", "phys_bubble_eq",
             "phys_thermal", "phys_ionization", "num_rtol_log10", "num_conv",
@@ -1352,10 +1352,10 @@ def register_callbacks(app: Any) -> None:
         Input("bubble_R0", "value"),
         Input("ambient_p", "value"),
     )
-    def _live_status_chip(f_log10, pa_atm, R0_log10, p_log10):           # noqa: ANN001
-        if any(v is None for v in (f_log10, pa_atm, R0_log10, p_log10)):
+    def _live_status_chip(f_hz_in, pa_atm, R0_log10, p_log10):           # noqa: ANN001
+        if any(v is None for v in (f_hz_in, pa_atm, R0_log10, p_log10)):
             return no_update
-        f_hz = (10.0 ** float(f_log10)) * 1000.0           # log10(kHz) → Hz
+        f_hz = float(f_hz_in)                              # slider is now in Hz
         R0_m = (10.0 ** float(R0_log10)) * 1e-6            # log10(µm) → m
         p_atm = (10.0 ** float(p_log10))                   # log10(kPa) → kPa
         p_atm = (p_atm * 1000.0) / 101_325.0               # → atm
@@ -1382,7 +1382,7 @@ def register_callbacks(app: Any) -> None:
         State("liquid_dropdown", "value"),
         prevent_initial_call=True,
     )
-    def _propose_couple(f_log10, R0_log10, couple_on,                    # noqa: ANN001
+    def _propose_couple(f_hz_in, R0_log10, couple_on,                    # noqa: ANN001
                           p_log10, liquid_name):
         import math
         if not couple_on:
@@ -1393,10 +1393,12 @@ def register_callbacks(app: Any) -> None:
             return None
         if triggered not in ("drive_f", "bubble_R0"):
             return no_update
-        if any(v is None for v in (f_log10, R0_log10, p_log10)):
+        if any(v is None for v in (f_hz_in, R0_log10, p_log10)):
             return None
 
-        f_hz = (10.0 ** float(f_log10)) * 1000.0
+        # drive_f slider value is now plain Hz; only R₀ and ambient_p
+        # remain on log scale (R₀: log10(µm); p: log10(kPa)).
+        f_hz = float(f_hz_in)
         R0_m = (10.0 ** float(R0_log10)) * 1e-6
         p_atm = (10.0 ** float(p_log10)) * 1000.0 / 101_325.0
         try:
@@ -1412,14 +1414,12 @@ def register_callbacks(app: Any) -> None:
             R0_m=R0_m, p_inf_atm=p_atm, gamma=gamma, rho=liq.rho,
         )
 
-        # Build the proposal only when the partner would move by >1 %
-        # in log-space (and >5 % in absolute terms). Below that, we
-        # don't bother the user.
+        # Build the proposal only when the partner would move by >5 %
+        # relative. Below that we don't bother the user.
         if triggered == "drive_f" and new_R0_m is not None and new_R0_m > 0:
             candidate_log10 = math.log10(new_R0_m * 1e6)
-            log_delta = abs(candidate_log10 - float(R0_log10))
             abs_delta = abs(new_R0_m - R0_m) / R0_m
-            if log_delta > 0.01 and abs_delta > 0.05:
+            if abs_delta > 0.05:
                 return {
                     "target": "bubble_R0",
                     "current_log10": float(R0_log10),
@@ -1431,16 +1431,14 @@ def register_callbacks(app: Any) -> None:
                                   f"{f_hz/1000:.1f} kHz"),
                 }
         if triggered == "bubble_R0" and new_f_hz is not None and new_f_hz > 0:
-            candidate_log10 = math.log10(new_f_hz / 1000.0)
-            log_delta = abs(candidate_log10 - float(f_log10))
             abs_delta = abs(new_f_hz - f_hz) / f_hz
-            if log_delta > 0.01 and abs_delta > 0.05:
+            if abs_delta > 0.05:
                 return {
                     "target": "drive_f",
-                    "current_log10": float(f_log10),
-                    "proposed_log10": round(candidate_log10, 3),
-                    "current_kHz": f_hz / 1000.0,
-                    "proposed_kHz": new_f_hz / 1000.0,
+                    "current_hz": f_hz,
+                    # drive_f slider is now in Hz, so "proposed_hz" is
+                    # the value to write directly into the slider.
+                    "proposed_hz": round(new_f_hz, 1),
                     "rationale": (f"keeps drive/Minnaert ratio at the SBSL "
                                   f"canonical 0.033 for the new R₀ "
                                   f"{R0_m*1e6:.2f} µm"),
@@ -1457,12 +1455,12 @@ def register_callbacks(app: Any) -> None:
             return {"display": "none"}, no_update
         target = proposal.get("target")
         if target == "drive_f":
-            cur = proposal["current_kHz"]
-            new = proposal["proposed_kHz"]
+            cur_hz = proposal["current_hz"]
+            new_hz = proposal["proposed_hz"]
             text = html.Div([
                 html.Span("🎯 ", style={"fontSize": "1.1em"}),
                 html.B("Auto-adapt suggestion: drive frequency"), html.Br(),
-                html.Span(f"{cur:.2f} kHz → {new:.2f} kHz",
+                html.Span(f"{cur_hz:,.0f} Hz → {new_hz:,.0f} Hz",
                             className="text-info"), html.Br(),
                 html.Small(proposal.get("rationale", ""),
                            style={"opacity": 0.85}),
@@ -1494,11 +1492,12 @@ def register_callbacks(app: Any) -> None:
         if not n_clicks or not proposal:
             return no_update, no_update, no_update
         target = proposal.get("target")
-        proposed = proposal.get("proposed_log10")
         if target == "drive_f":
-            return proposed, no_update, None
+            # drive_f slider is in Hz now — write proposed Hz directly.
+            return proposal.get("proposed_hz"), no_update, None
         if target == "bubble_R0":
-            return no_update, proposed, None
+            # bubble_R0 still on log scale — write proposed_log10.
+            return no_update, proposal.get("proposed_log10"), None
         return no_update, no_update, no_update
 
     @app.callback(
