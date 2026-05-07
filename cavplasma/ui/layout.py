@@ -190,14 +190,15 @@ def _ambient_controls() -> html.Div:
 
 def _drive_controls() -> html.Div:
     return html.Div([
-        dbc.Label("Frequency (kHz, log)"),
+        dbc.Label("Drive frequency f (kHz, log scale) "
+                  "— `drive_f` in dossier"),
         dcc.Slider(
             id="drive_f", min=0, max=3.7, value=1.42, step=0.05,
             marks={0: "1", 1: "10", 1.4: "26.5", 2: "100", 3: "1k", 3.7: "5k"},
             tooltip={"always_visible": False},
         ),
         html.Br(),
-        dbc.Label("Drive amplitude (atm)"),
+        dbc.Label("Drive amplitude P_A (atm) — `drive_pa` in dossier"),
         dcc.Slider(
             id="drive_pa", min=0.1, max=10.0, value=1.32, step=0.05,
             marks={0.5: "0.5", 1.0: "1", 1.32: "1.32", 3.0: "3", 10.0: "10"},
@@ -212,7 +213,7 @@ def _drive_controls() -> html.Div:
 
 def _bubble_controls() -> html.Div:
     return html.Div([
-        dbc.Label("R₀ (µm, log)"),
+        dbc.Label("Bubble R₀ (µm, log scale) — `bubble_R0` in dossier"),
         dcc.Slider(
             id="bubble_R0", min=-1, max=4, value=0.65, step=0.05,
             marks={-1: "0.1", 0: "1", 1: "10", 2: "100", 3: "1000", 4: "10⁴"},
