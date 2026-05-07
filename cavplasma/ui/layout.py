@@ -47,6 +47,7 @@ def controls_panel() -> dbc.Card:
                 [
                     dbc.Accordion(
                         [
+                            _accordion_item("Chamber", _chamber_controls(), "cham"),
                             _accordion_item("Liquid", _liquid_controls(), "liq"),
                             _accordion_item("Ambient", _ambient_controls(), "amb"),
                             _accordion_item("Drive", _drive_controls(), "drv"),
@@ -142,6 +143,70 @@ def controls_panel() -> dbc.Card:
             ),
         ],
     )
+
+
+def _chamber_controls() -> html.Div:
+    """Chamber geometry / wall material / size / Q.
+
+    Lets the user swap the pistol-shrimp open-water sentinel for a
+    real chamber, set radius / wall material / Q. Wall-material names
+    map to entries in `cavplasma.material.materials.catalog()`.
+    """
+    return html.Div([
+        dbc.Label("Chamber geometry — `chamber_geometry` in dossier"),
+        dcc.Dropdown(
+            id="chamber_geometry",
+            options=[
+                {"label": "Closed sphere",                  "value": "sphere"},
+                {"label": "Cylinder (axial mode)",          "value": "cylinder_axial"},
+                {"label": "Cylinder (radial mode)",         "value": "cylinder_radial"},
+                {"label": "Open water / pistol-jet",        "value": "pistol_jet"},
+                {"label": "HIFU focal spot",                "value": "hifu_focus"},
+                {"label": "Horn / open bath",               "value": "horn_open_bath"},
+            ],
+            value="sphere", clearable=False,
+        ),
+        html.Br(),
+        dbc.Label("Chamber radius (cm) — `chamber_radius`"),
+        dcc.Slider(
+            id="chamber_radius_cm", min=1, max=50, step=0.5, value=5,
+            marks={1: "1 cm", 5: "5 cm", 10: "10 cm", 25: "25 cm", 50: "50 cm"},
+            tooltip={"always_visible": False, "template": "{value} cm"},
+        ),
+        html.Br(),
+        dbc.Label("Wall material — `wall_material.name`"),
+        dcc.Dropdown(
+            id="chamber_wall",
+            options=[
+                {"label": "Borosilicate glass (Pyrex, transparent)",
+                 "value": "borosilicate_glass"},
+                {"label": "Fused silica (transparent, UV)",
+                 "value": "fused_silica"},
+                {"label": "Stainless 316",      "value": "stainless_316"},
+                {"label": "Stainless 304",      "value": "stainless_304"},
+                {"label": "Aluminum 6061",      "value": "aluminum_6061"},
+                {"label": "Aluminum 1100",      "value": "aluminum_1100"},
+                {"label": "Brass C36000",       "value": "brass_C36000"},
+                {"label": "Ti-6Al-4V",          "value": "titanium_6al4v"},
+                {"label": "Inconel 625",        "value": "inconel_625"},
+                {"label": "Open water (no wall)",
+                 "value": "open_water"},
+            ],
+            value="borosilicate_glass", clearable=False,
+        ),
+        html.Br(),
+        dbc.Label("Quality factor Q — `chamber_Q`"),
+        dbc.Input(id="chamber_Q", type="number",
+                   value=1000, min=1, max=100000, step=10,
+                   className="form-control form-control-sm"),
+        html.Div(
+            "Q sets the chamber's acoustic ringing — high Q amplifies "
+            "on-resonance drives but tightens the bandwidth (typical "
+            "SBSL Pyrex sphere: 100–1000; HIFU focal spot: 5–50).",
+            className="text-muted small mt-1",
+            style={"fontSize": "0.78em"},
+        ),
+    ])
 
 
 def _liquid_controls() -> html.Div:

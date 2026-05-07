@@ -69,6 +69,10 @@ def apply_controls(
     phys_ionization: str,
     num_rtol_log10: float,
     num_conv: bool,
+    chamber_geometry: Optional[str] = None,
+    chamber_radius_cm: Optional[float] = None,
+    chamber_wall: Optional[str] = None,
+    chamber_Q: Optional[float] = None,
 ) -> str:
     """Apply control values to the scenario_store. Returns updated JSON."""
     base = scenario_from_store(scenario_payload) or scenario_presets.sbsl_canonical()
@@ -78,6 +82,29 @@ def apply_controls(
         liquid = _liquid_preset(liquid_name)
     except Exception:
         liquid = base.liquid
+
+    # Chamber — geometry / radius / wall material / Q. The wall_material
+    # name maps to a fully-populated WallMaterial via the §13 catalog;
+    # falls back to whatever the base scenario had if the catalog miss.
+    chamber = base.chamber
+    if (chamber_geometry is not None or chamber_radius_cm is not None
+            or chamber_wall is not None or chamber_Q is not None):
+        wall = chamber.wall_material
+        if chamber_wall:
+            try:
+                from cavplasma.material.materials import get as _wall_get
+                wall = _wall_get(chamber_wall)
+            except Exception:                                              # noqa: BLE001
+                # Catalog miss — keep existing wall_material.
+                pass
+        chamber = dataclasses.replace(
+            chamber,
+            geometry=chamber_geometry or chamber.geometry,
+            radius=(float(chamber_radius_cm) / 100.0
+                    if chamber_radius_cm is not None else chamber.radius),
+            wall_material=wall,
+            Q=float(chamber_Q) if chamber_Q is not None else chamber.Q,
+        )
 
     # Ambient — `ambient_p` slider is now log₁₀(p_∞ in kPa) so a single
     # control covers vacuum (~30 kPa) → 10 km seawater (~100 MPa).
@@ -137,6 +164,7 @@ def apply_controls(
 
     new_scenario = dataclasses.replace(
         base,
+        chamber=chamber,
         liquid=liquid,
         ambient=ambient,
         drive=drive_schedule,
@@ -189,6 +217,11 @@ def scenario_to_control_values(scenario: Scenario) -> dict:
     # ambient_p slider is now log₁₀(p_∞ in kPa) — covers vacuum → Mariana.
     p_inf_kpa = max(scenario.ambient.p_inf / 1_000.0, 1e-3)
     return {
+        "chamber_geometry":  scenario.chamber.geometry,
+        "chamber_radius_cm": scenario.chamber.radius * 100.0,
+        "chamber_wall":      (scenario.chamber.wall_material.name
+                                if scenario.chamber.wall_material else "borosilicate_glass"),
+        "chamber_Q":         scenario.chamber.Q,
         "liquid_dropdown":   scenario.liquid.name,
         "ambient_T":         scenario.ambient.T_inf,
         "ambient_p":         math.log10(p_inf_kpa),
@@ -887,17 +920,21 @@ def register_callbacks(app: Any) -> None:
         Output("phys_ionization", "value"),
         Output("num_rtol", "value"),
         Output("num_conv", "value"),
+        Output("chamber_geometry", "value"),
+        Output("chamber_radius_cm", "value"),
+        Output("chamber_wall", "value"),
+        Output("chamber_Q", "value"),
         Input("preset_modal_confirm", "n_clicks"),
         State("preset_pending", "data"),
         prevent_initial_call=True,
     )
     def _confirm_preset(n_clicks, pending):                             # noqa: ANN001
         if not n_clicks or not pending:
-            return [no_update] * 19
+            return [no_update] * 23
         try:
             payload = apply_preset(pending)
         except Exception:                                               # noqa: BLE001
-            return [no_update] * 19
+            return [no_update] * 23
         scenario = scenario_from_store(payload)
         ctrls = scenario_to_control_values(scenario)
         return (
@@ -920,6 +957,10 @@ def register_callbacks(app: Any) -> None:
             ctrls["phys_ionization"],
             ctrls["num_rtol"],
             ctrls["num_conv"],
+            ctrls["chamber_geometry"],
+            ctrls["chamber_radius_cm"],
+            ctrls["chamber_wall"],
+            ctrls["chamber_Q"],
         )
 
     @app.callback(
@@ -954,6 +995,10 @@ def register_callbacks(app: Any) -> None:
         Input("phys_ionization", "value"),
         Input("num_rtol", "value"),
         Input("num_conv", "value"),
+        Input("chamber_geometry", "value"),
+        Input("chamber_radius_cm", "value"),
+        Input("chamber_wall", "value"),
+        Input("chamber_Q", "value"),
         State("scenario_store", "data"),
     )
     def _apply_controls(*args):                                          # noqa: ANN001
@@ -963,6 +1008,7 @@ def register_callbacks(app: Any) -> None:
             "drive_pa_atm", "drive_cycles", "bubble_R0_log10",
             "gas_ar", "gas_h2o", "gas_air", "phys_bubble_eq",
             "phys_thermal", "phys_ionization", "num_rtol_log10", "num_conv",
+            "chamber_geometry", "chamber_radius_cm", "chamber_wall", "chamber_Q",
         )
         kwargs = dict(zip(keys, args[:-1]))
         return apply_controls(scenario_payload, **kwargs)
@@ -1240,9 +1286,9 @@ def register_callbacks(app: Any) -> None:
     # Auto-design — heuristic find + grid-search refine
     # ----------------------------------------------------------------------
     def _autodesign_outputs(payload, label, status, diagnostic):
-        """Pack the 18-output tuple shared by both autodesign callbacks."""
+        """Pack the 22-output tuple shared by both autodesign callbacks."""
         if payload is None:
-            return ([no_update] * 16) + [status, diagnostic]
+            return ([no_update] * 20) + [status, diagnostic]
         scenario = scenario_from_store(payload)
         ctrls = scenario_to_control_values(scenario)
         return [
@@ -1262,6 +1308,10 @@ def register_callbacks(app: Any) -> None:
             ctrls["phys_thermal"],
             ctrls["phys_ionization"],
             ctrls["num_rtol"],
+            ctrls["chamber_geometry"],
+            ctrls["chamber_radius_cm"],
+            ctrls["chamber_wall"],
+            ctrls["chamber_Q"],
             status,
             diagnostic,
         ]
@@ -1283,6 +1333,10 @@ def register_callbacks(app: Any) -> None:
         Output("phys_thermal", "value", allow_duplicate=True),
         Output("phys_ionization", "value", allow_duplicate=True),
         Output("num_rtol", "value", allow_duplicate=True),
+        Output("chamber_geometry", "value", allow_duplicate=True),
+        Output("chamber_radius_cm", "value", allow_duplicate=True),
+        Output("chamber_wall", "value", allow_duplicate=True),
+        Output("chamber_Q", "value", allow_duplicate=True),
         Output("autodesign_status", "children"),
         Output("autodesign_diagnostic", "children"),
         Input("autodesign_find_btn", "n_clicks"),
@@ -1294,7 +1348,7 @@ def register_callbacks(app: Any) -> None:
     )
     def _autodesign_find_cb(n, T_target, stable, max_pa, base_payload):  # noqa: ANN001
         if not n:
-            return [no_update] * 18
+            return [no_update] * 22
         payload, status, diagnostic = autodesign_find(
             T_target, stable, max_pa, base_payload)
         return _autodesign_outputs(
@@ -1320,6 +1374,10 @@ def register_callbacks(app: Any) -> None:
         Output("phys_thermal", "value", allow_duplicate=True),
         Output("phys_ionization", "value", allow_duplicate=True),
         Output("num_rtol", "value", allow_duplicate=True),
+        Output("chamber_geometry", "value", allow_duplicate=True),
+        Output("chamber_radius_cm", "value", allow_duplicate=True),
+        Output("chamber_wall", "value", allow_duplicate=True),
+        Output("chamber_Q", "value", allow_duplicate=True),
         Output("autodesign_status", "children", allow_duplicate=True),
         Output("autodesign_diagnostic", "children", allow_duplicate=True),
         Input("autodesign_refine_btn", "n_clicks"),
@@ -1331,7 +1389,7 @@ def register_callbacks(app: Any) -> None:
     )
     def _autodesign_refine_cb(n, T_target, stable, max_pa, payload):     # noqa: ANN001
         if not n:
-            return [no_update] * 18
+            return [no_update] * 22
         new_payload, status, diagnostic = autodesign_refine(
             T_target, stable, max_pa, payload)
         return _autodesign_outputs(
@@ -1541,13 +1599,17 @@ def register_callbacks(app: Any) -> None:
         Output("phys_ionization", "value", allow_duplicate=True),
         Output("num_rtol", "value", allow_duplicate=True),
         Output("num_conv", "value", allow_duplicate=True),
+        Output("chamber_geometry", "value", allow_duplicate=True),
+        Output("chamber_radius_cm", "value", allow_duplicate=True),
+        Output("chamber_wall", "value", allow_duplicate=True),
+        Output("chamber_Q", "value", allow_duplicate=True),
         Input("load_upload", "contents"),
         State("load_upload", "filename"),
         prevent_initial_call=True,
     )
     def _load(contents, filename):                                       # noqa: ANN001
         if not contents:
-            return [no_update] * 17
+            return [no_update] * 21
         try:
             import base64
             _header, b64 = contents.split(",", 1)
@@ -1556,7 +1618,7 @@ def register_callbacks(app: Any) -> None:
         except Exception as exc:                                          # noqa: BLE001
             label = f"failed to load {filename or 'file'}: {type(exc).__name__}"
             return ([no_update, label]
-                    + [no_update] * 15)
+                    + [no_update] * 19)
         ctrls = scenario_to_control_values(scenario)
         # Pull the scenario's own metadata.name when present, otherwise
         # show the uploaded filename. Helps the user tell whether the
@@ -1587,4 +1649,8 @@ def register_callbacks(app: Any) -> None:
             ctrls["phys_ionization"],
             ctrls["num_rtol"],
             ctrls["num_conv"],
+            ctrls["chamber_geometry"],
+            ctrls["chamber_radius_cm"],
+            ctrls["chamber_wall"],
+            ctrls["chamber_Q"],
         )
