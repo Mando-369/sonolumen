@@ -692,6 +692,122 @@ def wall_pressure_capability(scenario: Any) -> dict:
     }
 
 
+_LIQUID_INTRO: dict[str, str] = {
+    "water": ("Standard cavitation reference. Most published SBSL data "
+               "is in water. High vapor pressure (~2.3 kPa) puts ~3 kPa of "
+               "water vapor inside the bubble; that vapor's vibrational/"
+               "rotational modes absorb collapse energy → T_peak typically "
+               "15–25 kK."),
+    "seawater": ("Pistol-shrimp's natural medium. ~3% denser and stiffer "
+                  "than fresh water. Salinity barely changes vapor pressure, "
+                  "so collapse violence and T_peak are similar to water."),
+    "glycerin": ("Hot SBSL without acid. Viscosity is ~1400× water → "
+                  "bubbles are ultra-shape-stable; you can drive them past "
+                  "the usual instability limit. Vapor pressure is "
+                  "near-zero → no endothermic quenching → T_peak runs "
+                  "~25 kK with Ar gas. Viscous and hard to clean."),
+    "sulfuric_98": ("The Suslick recipe — concentrated H₂SO₄. "
+                     "Near-zero vapor pressure + the densest liquid in the "
+                     "catalog → the most violent SBSL collapse on record. "
+                     "T_peak hits 30–40 kK with Xe gas (Flannigan & Suslick "
+                     "2005). CORROSIVE: PTFE seals only, exhaust hood, "
+                     "full PPE."),
+    "silicone_oil_100cSt": ("Inert lab-research liquid. Very viscous "
+                              "and low surface tension → clean platform for "
+                              "studying shape-mode growth. Lowest sound "
+                              "speed in the catalog (980 m/s vs 1480 in "
+                              "water) shifts every chamber resonance ~33% "
+                              "lower."),
+}
+
+
+def render_liquid_properties_card(scenario: Any) -> Any:
+    """Catalog properties of the current liquid + T/p-corrected sound
+    speed + interpretive notes. Updates live as the user changes
+    `liquid` / `T_∞` / `p_∞`.
+    """
+    if scenario is None or scenario.liquid is None:
+        return html.Em("Pick a liquid to see properties.",
+                        style={"opacity": 0.6})
+    liq = scenario.liquid
+    amb = scenario.ambient
+
+    # T/p-corrected sound speed (the value the simulator actually uses).
+    try:
+        from cavplasma.liquids import corrected_sound_speed_for
+        c_corrected = corrected_sound_speed_for(liq, amb)
+    except Exception:                                                    # noqa: BLE001
+        c_corrected = liq.c
+    Z_corrected_MRayl = liq.rho * c_corrected / 1e6
+
+    # Vapor-pressure regime classification.
+    if liq.p_v < 10.0:
+        pv_label = "near-zero — no quenching, hot plasma possible"
+        pv_color = "#859900"      # solarized green
+    elif liq.p_v < 1000.0:
+        pv_label = "low — mild quenching"
+        pv_color = "#b58900"      # solarized yellow
+    else:
+        pv_label = "high — vapor strongly quenches T_peak"
+        pv_color = "#cb4b16"      # solarized orange
+
+    # Viscosity regime classification.
+    if liq.mu < 5e-3:
+        mu_label = "low — normal shape modes"
+        mu_color = None
+    elif liq.mu < 0.1:
+        mu_label = "moderate — some damping"
+        mu_color = "#b58900"
+    else:
+        mu_label = "high — bubbles ultra-stable"
+        mu_color = "#268bd2"
+
+    rows = [
+        html.Tr([html.Td("Name"),
+                  html.Td(html.Code(liq.name,
+                                     style={"fontSize": "0.9em"}))]),
+        html.Tr([html.Td("Density ρ"),
+                  html.Td(f"{liq.rho:.0f} kg/m³")]),
+        html.Tr([html.Td("Sound speed (catalog, 20 °C / 1 atm)"),
+                  html.Td(f"{liq.c:.0f} m/s")]),
+        html.Tr([html.Td("Sound speed (current T, p)"),
+                  html.Td(f"{c_corrected:.0f} m/s   (Δ {c_corrected-liq.c:+.0f})")]),
+        html.Tr([html.Td("Acoustic impedance Z = ρc"),
+                  html.Td(f"{Z_corrected_MRayl:.2f} MRayl")]),
+        html.Tr([html.Td("Viscosity μ"),
+                  html.Td([f"{liq.mu:.2e} Pa·s   ",
+                           html.Em(mu_label,
+                                    style={"color": mu_color,
+                                           "opacity": 0.85})])]),
+        html.Tr([html.Td("Surface tension σ"),
+                  html.Td(f"{liq.sigma*1000:.1f} mN/m")]),
+        html.Tr([html.Td("Vapor pressure p_v"),
+                  html.Td([f"{liq.p_v:.1f} Pa   ",
+                           html.Em(pv_label,
+                                    style={"color": pv_color,
+                                           "opacity": 0.9})])]),
+        html.Tr([html.Td("Tait (B, n)"),
+                  html.Td(f"{liq.B_tait/1e6:.0f} MPa, n = {liq.n_tait:.2f}")]),
+        html.Tr([html.Td("B/A nonlinearity"),
+                  html.Td(f"{liq.beta_BoverA:.1f}")]),
+        html.Tr([html.Td("Absorption"),
+                  html.Td(f"{liq.alpha_dB_cm_MHz2:.3f} dB/(cm·MHz²)")]),
+    ]
+
+    intro = _LIQUID_INTRO.get(liq.name)
+    intro_block = []
+    if intro:
+        intro_block = [
+            dbc.Alert(intro, color="info", className="py-2 mb-2",
+                       style={"fontSize": "0.83em"}),
+        ]
+
+    return html.Div(intro_block + [
+        dbc.Table(html.Tbody(rows), striped=True, hover=False, size="sm",
+                   className="mb-0", style={"fontSize": "0.85em"}),
+    ])
+
+
 def render_wall_capability_card(scenario: Any,
                                   result_payload: Optional[dict]) -> Any:
     """UI card showing what the wall can take vs what the run delivers.
@@ -1342,13 +1458,15 @@ def register_callbacks(app: Any) -> None:
         Output("caveats_list", "children"),
         Output("material_summary", "children"),
         Output("wall_capability_card", "children"),
+        Output("liquid_properties_card", "children"),
         Input("result_store", "data"),
         Input("scenario_store", "data"),
     )
     def _render_results(result_payload, scenario_payload):              # noqa: ANN001
-        # The wall capability table updates live with the chamber/wall
-        # controls (scenario_store input) regardless of whether a run
-        # has been performed; the margin block only appears after TEST.
+        # Wall capability + liquid properties update live with the
+        # scenario_store input (so the user can shop materials / liquids
+        # without having to click TEST first); the margin/result rows
+        # only appear after a run.
         scenario = scenario_from_store(scenario_payload)
         return (
             render_regime_card(result_payload),
@@ -1357,6 +1475,7 @@ def register_callbacks(app: Any) -> None:
             render_caveats(result_payload),
             render_material_summary(result_payload),
             render_wall_capability_card(scenario, result_payload),
+            render_liquid_properties_card(scenario),
         )
 
     # Listen button → set <audio> src to base64 WAV

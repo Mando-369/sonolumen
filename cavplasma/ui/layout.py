@@ -556,6 +556,15 @@ def results_panel() -> dbc.Card:
                 html.Hr(),
                 html.H6("Wall pressure capability"),
                 html.Div(id="wall_capability_card"),
+
+                # Liquid properties — every catalog field of the chosen
+                # liquid, plus the T/p-corrected sound speed and
+                # acoustic impedance, plus interpretive notes (vapor
+                # quenching, viscous damping, etc.). Updated live as
+                # the user changes liquid / T_∞ / p_∞.
+                html.Hr(),
+                html.H6("Liquid properties"),
+                html.Div(id="liquid_properties_card"),
             ]),
         ],
     )
