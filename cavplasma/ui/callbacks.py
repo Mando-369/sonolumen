@@ -808,6 +808,110 @@ def render_liquid_properties_card(scenario: Any) -> Any:
     ])
 
 
+def render_bubble_properties_card(scenario: Any) -> Any:
+    """Live bubble diagnostics: Minnaert frequency, Blake threshold,
+    drive/Minnaert ratio, Laplace surface-tension pressure, regime
+    indicator. Updates every time R₀ / liquid / ambient / drive change.
+    """
+    if scenario is None or scenario.bubble_population.seed is None:
+        return html.Em("Pick a bubble seed to see properties.",
+                        style={"opacity": 0.6})
+    seed = scenario.bubble_population.seed
+    liq = scenario.liquid
+    amb = scenario.ambient
+    R0 = max(seed.R0, 1e-12)
+    gamma_g = seed.gamma_g
+
+    # Minnaert frequency: f_M = (1/(2π R₀))·√(3γ p_∞/ρ)
+    import math
+    f_M = (1.0 / (2.0 * math.pi * R0)) * math.sqrt(
+        3.0 * gamma_g * amb.p_inf / liq.rho)
+
+    # Drive frequency from the first waveform (if any) for the ratio.
+    drv = next(iter(scenario.drive.waveforms.values()), None)
+    f_drive = drv.f if drv else 0.0
+    f_ratio = (f_drive / f_M) if f_M > 0 else 0.0
+
+    # Blake threshold (cavplasma.seed.blake_threshold) — pressure above
+    # ambient that the rarefaction must reach to trigger inertial growth.
+    try:
+        from cavplasma.seed import blake_threshold
+        P_B_pa = blake_threshold(R0, liq, amb)
+    except Exception:                                                    # noqa: BLE001
+        P_B_pa = float("nan")
+    P_B_atm = P_B_pa / 101_325.0
+    drive_atm = (drv.P_A / 101_325.0) if drv else 0.0
+
+    # Laplace pressure (surface tension contribution)
+    P_laplace_kPa = (2.0 * liq.sigma / R0) / 1000.0
+
+    # Regime classification (text only; the live status chip in the
+    # auto-design panel does the colour-coded version).
+    if f_ratio < 0.1:
+        regime_label = "inertial collapse regime (drive ≪ Minnaert) — SBSL works here"
+    elif f_ratio < 0.5:
+        regime_label = "moderate inertial — collapse violent but bubble still tracks drive"
+    elif f_ratio < 2.0:
+        regime_label = "near-resonance — bubble oscillates linearly, no inertial collapse"
+    else:
+        regime_label = "drive too fast for bubble to follow"
+
+    # Gas composition string
+    gas = seed.gas_composition or {}
+    gas_str = ", ".join(f"{k}={v:.2f}" for k, v in sorted(gas.items())) \
+        or "(no gas defined)"
+
+    # Blake margin
+    if drive_atm > 0 and not math.isnan(P_B_atm):
+        if drive_atm < P_B_atm * 0.95:
+            blake_msg = (f"sub-Blake — drive {drive_atm:.2f} atm "
+                          f"< threshold {P_B_atm:.2f} atm")
+            blake_color = "secondary"
+        else:
+            margin = (drive_atm - P_B_atm) / P_B_atm * 100.0
+            blake_msg = (f"above Blake — {drive_atm:.2f} atm "
+                          f"vs threshold {P_B_atm:.2f} atm "
+                          f"(margin {margin:+.0f}%)")
+            blake_color = "success"
+    else:
+        blake_msg = f"Blake threshold ≈ {P_B_atm:.2f} atm (no drive set)"
+        blake_color = "secondary"
+
+    rows = [
+        html.Tr([html.Td("R₀ (equilibrium radius)"),
+                  html.Td(f"{R0*1e6:.3f} µm")]),
+        html.Tr([html.Td("Gas mix"),
+                  html.Td(html.Code(gas_str,
+                                     style={"fontSize": "0.85em"}))]),
+        html.Tr([html.Td("γ_g (adiabatic index)"),
+                  html.Td(f"{gamma_g:.3f}"
+                          + (" (monatomic, hottest)"
+                              if gamma_g > 1.6
+                              else " (diatomic)" if gamma_g > 1.35
+                              else " (polyatomic, quenches T_peak)"))]),
+        html.Tr([html.Td("Minnaert frequency f_M"),
+                  html.Td(f"{f_M/1000:.1f} kHz")]),
+        html.Tr([html.Td("Drive frequency f"),
+                  html.Td(f"{f_drive/1000:.1f} kHz" if f_drive
+                           else "—")]),
+        html.Tr([html.Td("Drive / Minnaert ratio"),
+                  html.Td(f"{f_ratio:.4f}" if f_ratio else "—")]),
+        html.Tr([html.Td("Laplace surface tension"),
+                  html.Td(f"{P_laplace_kPa:.2f} kPa  (= 2σ/R₀)")]),
+        html.Tr([html.Td("Blake threshold"),
+                  html.Td(f"{P_B_atm:.2f} atm")]),
+    ]
+
+    return html.Div([
+        dbc.Table(html.Tbody(rows), striped=True, hover=False, size="sm",
+                   className="mb-2", style={"fontSize": "0.85em"}),
+        dbc.Alert(regime_label, color="info", className="py-1 mb-2",
+                   style={"fontSize": "0.83em"}),
+        dbc.Alert(blake_msg, color=blake_color, className="py-1 mb-0",
+                   style={"fontSize": "0.83em"}),
+    ])
+
+
 def render_wall_capability_card(scenario: Any,
                                   result_payload: Optional[dict]) -> Any:
     """UI card showing what the wall can take vs what the run delivers.
@@ -1553,14 +1657,15 @@ def register_callbacks(app: Any) -> None:
         Output("material_summary", "children"),
         Output("wall_capability_card", "children"),
         Output("liquid_properties_card", "children"),
+        Output("bubble_properties_card", "children"),
         Input("result_store", "data"),
         Input("scenario_store", "data"),
     )
     def _render_results(result_payload, scenario_payload):              # noqa: ANN001
-        # Wall capability + liquid properties update live with the
-        # scenario_store input (so the user can shop materials / liquids
-        # without having to click TEST first); the margin/result rows
-        # only appear after a run.
+        # Wall capability + liquid + bubble properties update live with
+        # the scenario_store input — user can shop without clicking
+        # TEST first. Result rows (peak wall pressure, etc.) only
+        # appear after a run.
         scenario = scenario_from_store(scenario_payload)
         return (
             render_regime_card(result_payload),
@@ -1570,6 +1675,7 @@ def register_callbacks(app: Any) -> None:
             render_material_summary(result_payload),
             render_wall_capability_card(scenario, result_payload),
             render_liquid_properties_card(scenario),
+            render_bubble_properties_card(scenario),
         )
 
     # Listen button → set <audio> src to base64 WAV

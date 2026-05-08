@@ -670,6 +670,14 @@ def results_panel() -> dbc.Card:
                 html.Hr(),
                 html.H6("Liquid properties"),
                 html.Div(id="liquid_properties_card"),
+
+                # Bubble properties — derived numbers for the current
+                # R₀ + liquid + ambient + drive: Minnaert frequency,
+                # Blake threshold, drive/Minnaert ratio, Laplace
+                # pressure, regime indicator. Updates live.
+                html.Hr(),
+                html.H6("Bubble properties"),
+                html.Div(id="bubble_properties_card"),
             ]),
         ],
     )

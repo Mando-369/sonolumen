@@ -300,16 +300,121 @@ Parameter coupling cheat-sheet:
 
 ---
 
-## 5. Bubble *(to be documented as we walk through it)*
+## 5. Bubble
 
-Currently exposes:
-- `bubble_R0` — equilibrium radius (log10(µm))
-- `gas_ar`, `gas_h2o`, `gas_air` — gas mole fractions
+The bubble itself — its size, what's inside, where it sits, what
+kind of event you're studying.
 
-Plus internal: `seed_position`, `Rdot0`, `T0`, `gamma_g`, `kappa`,
-`seed_method`, `p_gas_initial`, `toroidal_correction_factor`.
+### `bubble_R0` (µm)
 
-(Not yet expanded — will be filled in as we walk through this panel.)
+The bubble's equilibrium radius (size at rest, balanced against
+ambient pressure + surface tension). Slider stores log₁₀(µm),
+range 0.1 µm to 10 mm; paired input box shows actual µm.
+
+**What R₀ sets:**
+- **Minnaert (natural) frequency**: `f_M = (1/(2π·R₀))·√(3γ·p_∞/ρ)`. f_M ∝ 1/R₀ — bigger bubble → lower natural frequency.
+- **Blake threshold**: bigger R₀ → easier to cavitate. A 50 µm bubble cavitates at ~0.5 atm; a 1 µm bubble needs ~3 atm.
+- **R_max growth**: at fixed P_A/p_∞ ratio, the absolute R_max scales with R₀.
+- **Laplace pressure**: `2σ/R₀` — smaller bubble, more surface tension squeezing inward.
+
+**Meaningful values:**
+
+| R₀ | Use case |
+|---|---|
+| 1–3 µm | Suslick H₂SO₄+Xe regime — small bubble, less vapor in-fill, hotter |
+| **4.5 µm** | **SBSL canonical** |
+| 10–50 µm | sonochemistry; bubbles in detergent water |
+| 100–500 µm | medical microbubble contrast agents |
+| 0.5–3 mm | impulsive cavitation (laser, spark, **pistol shrimp**) |
+
+### Gas composition: `gas_ar`, `gas_h2o`, `gas_air`
+
+Three numeric inputs giving the bubble's gas mole fractions.
+
+| Component | γ (adiabatic index) | Effect on T_peak |
+|---|---|---|
+| **Ar** (argon) | 5/3 = 1.667 | highest — monatomic, no internal modes |
+| **H₂O** (water vapor) | ~1.33 | endothermic dissociation at ~5000 K quenches T_peak ~2× |
+| **Air** (N₂/O₂) | 1.40 | reactive at high T, quenches relative to Ar |
+
+How `gas_air` decomposes in `apply_controls`:
+- N₂ = 0.78 × gas_air
+- O₂ = 0.21 × gas_air
+- Ar = gas_ar + 0.0093 × gas_air (atmospheric Ar component added)
+
+**Common mixes:**
+
+| `gas_ar` | `gas_h2o` | `gas_air` | Result |
+|---|---|---|---|
+| 0.99 | 0.01 | 0 | **SBSL canonical** — pure Ar with vapor equilibrium |
+| 0 | 0 | 1.0 | air-saturated water (real-world starting condition) |
+| 0.95 | 0.05 | 0 | Ar with extra water vapor — slightly hotter than SBSL |
+| 0 | 0 | 0 | (falls back to whatever the preset's seed has) |
+
+**Argon rectification** (real-world physics not in the model):
+in air-saturated water, after ~10⁴ acoustic cycles the bubble
+selectively expels reactive N₂/O₂ and concentrates Ar to ~99 %.
+That's why air-seeded SBSL ends up looking like Ar SBSL after
+~10 seconds of operation. The **C3 caveat** in the suggestions
+panel reminds you of this when a run covers many cycles.
+
+### `seed_position` (currently JSON-only)
+
+`(x, y, z)` coordinates of the bubble centre in metres. Default
+`(0, 0, 0)` = chamber centre. **Not in the UI** — set via JSON
+or preset.
+
+**Effects:**
+- For closed sphere: bubble at centre = pressure antinode = full P_A. Off-centre, sees `P_A · sinc(π·r/R)`.
+- Wall stress depends on bubble-to-wall distance. Closer = harder hit.
+
+For pistol-shrimp impulsive events, position barely affects the
+bubble dynamics directly (ambient pressure is uniform), but it
+shifts where the wall stress is measured.
+
+### Hidden seed parameters (not in UI)
+
+These live on the `BubbleSeed` dataclass and are set by presets:
+
+| Param | Default | What it does |
+|---|---|---|
+| `Rdot0` | 0 m/s | initial wall velocity at t=0 |
+| `T0` | 293.15 K | initial gas temperature inside bubble |
+| `gamma_g` | 5/3 (Ar) or 1.4 (air) | adiabatic index |
+| `kappa` | 1.4 | polytropic index for the polytropic thermal model only |
+| `seed_method` | `"rectified_diffusion_equilibrium"` / `"freeze_at_nucleation"` | how the initial state is computed at t=0 |
+| `p_gas_initial` | 1 kPa (pistol shrimp) | initial gas pressure inside bubble for impulsive events; lower → more violent collapse |
+| `toroidal_correction_factor` | 1.0 | shape-correction multiplier |
+
+For pistol-shrimp realism, `p_gas_initial` is the most important
+hidden parameter — it sets how much non-condensable gas remains
+in the bubble at R_max. Standard 1 kPa gives Versluis 2000
+collapse violence.
+
+### `BubblePopulation.kind` (preset-controlled)
+
+| Kind | What it is | Used by |
+|---|---|---|
+| `single_trapped` | one bubble in continuous acoustic drive | SBSL, tabletop_starter |
+| `impulsive` | one-shot event with R_max + p_gas_initial set explicitly | pistol_shrimp_event |
+| `cloud` | v3 — raises `NotImplementedError` | reserved for future |
+
+### Derived: bubble properties card (right column)
+
+The right-column "Bubble properties" card shows the derived
+quantities from R₀ + gas + liquid + ambient + drive, updated live:
+
+- R₀ in µm
+- Gas mix string
+- γ_g with annotation (monatomic / diatomic / polyatomic)
+- Minnaert frequency f_M in kHz
+- Drive frequency f and the **drive/Minnaert ratio**
+- Laplace surface tension pressure (= 2σ/R₀)
+- Blake threshold in atm
+
+Plus two coloured banners:
+- **Regime indicator** (info): "inertial collapse regime — SBSL works here" / "near-resonance — bubble oscillates linearly" / etc.
+- **Blake margin** (green/grey): "above Blake — drive 1.32 atm vs threshold 0.96 atm (margin +37%)" or "sub-Blake — drive 0.40 atm < threshold 0.96 atm".
 
 ---
 
