@@ -494,13 +494,75 @@ once, or you'll lose track of which choice caused the change.
 
 ---
 
-## 7. Numerics *(to be documented)*
+## 7. Numerics
 
-Currently exposes:
-- `num_rtol` — log10 of relative tolerance for the ODE solver
-- `num_conv` — toggle for the §11.5 convergence test
+The smallest panel — two controls — but the choices trade run time
+against accuracy and you should know the right setting for the kind
+of work you're doing.
 
-(Not yet expanded.)
+### `num_rtol` — Relative tolerance (log₁₀)
+
+Slider stores `log₁₀(rtol)`, range `−13` to `−6`. The ODE solver
+(`scipy.integrate.solve_ivp` with LSODA) adapts its step size to
+keep local relative error below `rtol`. Tighter → smaller steps →
+more accurate but slower.
+
+| Slider | rtol | Behaviour |
+|---|---|---|
+| −6 | 1e-6 | very loose; fast, but T_peak shifts 5 % run-to-run |
+| −8 | 1e-8 | engineering default |
+| −10 | 1e-10 | clean for SBSL canonical |
+| **−11** | **1e-11** | **default — reproduces literature SBSL T_peak to 0.1 %** |
+| −12 | 1e-12 | overkill for SBSL, useful for Suslick H₂SO₄ extremes |
+| −13 | 1e-13 | hits LSODA's machine-precision wall; no gain |
+
+**Why this matters:** during collapse, R goes from ~µm to ~0.1 µm
+in ~10 ns. The solver needs ~ps steps to track wall acceleration.
+Loose rtol means ~ns steps, missing the peak.
+
+Run time scales roughly as `time ∝ 1/rtol^0.3` — going from 1e-8
+to 1e-11 costs ~3×; from 1e-11 to 1e-13 hits diminishing returns
+(noise-limited by `atol`).
+
+### `num_conv` — Convergence test toggle
+
+When ON, after the main run, re-runs at `rtol / 10` and checks
+T_peak agrees to better than 1 %. Costs ~50 % extra runtime
+(one extra integration at tighter tolerance).
+
+**What it tells you:**
+- `ΔT_peak < 1 %` → your `rtol` is tight enough; trust the result
+- `ΔT_peak > 1 %` → integrator hasn't converged; tighten by 1–2 orders and re-run
+
+**When to enable:**
+- T_peak > 30 kK or Mach > 0.8 (extreme regimes)
+- Sweep comparisons where the difference between two runs is small
+- Before publishing a number — always do a convergence pass
+
+Result lands in `summary.convergence_diagnostic` as
+`{relative_change: float}`. If `> 0.05`, the §14 regime classifier
+maps the regime to `marginal` (numerical_warning) — so the regime
+card itself flags convergence problems.
+
+### Hidden numerics options (not in UI)
+
+| Option | Default | What it does |
+|---|---|---|
+| `t_total` | auto | total integration time. Auto-computed as `n_cycles / drive_f` for sinusoidal drives, or set by impulsive presets. |
+| `atol` | 1e-15 (SBSL) | absolute tolerance per step. R values are tiny (1e-6 to 1e-3 m), so atol must be very small. |
+| `n_output` | 10,000 | number of output time points returned. Doesn't affect integration accuracy — only trace-array density. |
+| `output_log_spacing` | True | log-spaced output grid concentrates samples near collapse so the ns flash isn't lost. |
+| `integrator` | `"LSODA"` | adaptive stiff/non-stiff switcher. Alternatives: `"RK45"` (Runge-Kutta), `"Radau"` (implicit, very stiff). Defaults right for cavplasma. |
+
+### Practical recipes
+
+| Scenario | rtol | Conv test |
+|---|---|---|
+| Quick exploration / sweep / pattern hunt | −8 | OFF |
+| **SBSL canonical / pistol shrimp benchmarks** | **−11** | OFF |
+| Suslick H₂SO₄+Xe extreme | −12 | ON |
+| Publication / dossier acceptance | −11 | **ON** |
+| "Is this real or numerical?" debug | −8 → −10 → −12 | ON (compare 3 runs) |
 
 ---
 
