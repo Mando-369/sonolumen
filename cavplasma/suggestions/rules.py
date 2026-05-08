@@ -213,41 +213,73 @@ def R6_off_resonance(
 
 
 # ---------------------------------------------------------------------------
-# R7 — bubble far from Minnaert resonance
+# R7 — drive frequency too close to bubble Minnaert (linear regime trap)
 # ---------------------------------------------------------------------------
 def R7_minnaert_mismatch(
     scenario: Any, result: Any, regime: str,
 ) -> Optional[Suggestion]:
+    """Warn when the drive is too close to (or above) the Minnaert
+    frequency — the bubble enters linear-resonance mode and stops
+    doing inertial collapse.
+
+    SBSL operates with drive ~30× below Minnaert (ratio ≈ 0.033).
+    The earlier version of R7 mistakenly suggested moving R₀ to
+    *match* the drive frequency — i.e. linear resonance — which
+    actively breaks SBSL. The corrected rule only fires when the
+    bubble is genuinely in the danger zone (ratio > 0.3) and
+    suggests pushing R₀ smaller to lift Minnaert back above drive.
+    """
     summary = result.summary
     f_drive, _, tx = _drive_freq_amp(scenario)
     if f_drive <= 0.0 or summary.minnaert_freq <= 0.0:
         return None
-    octave_diff = abs(math.log2(f_drive / summary.minnaert_freq))
-    if octave_diff <= 0.5:
+    ratio = f_drive / summary.minnaert_freq
+
+    # Working SBSL range: ratio in [0.005, 0.3]. Below 0.005 is
+    # extremely-weak-coupling territory; above 0.3 is linear-regime
+    # trap. R7 only fires for the trap end (where the user can
+    # actively fix it by reducing R₀).
+    if ratio < 0.3:
         return None
+
     pop = scenario.bubble_population
     if pop.seed is None:
         return None
-    # Solve minnaert backwards — approximate Minnaert for ideal gas:
-    # f0 ≈ 1/(2π R₀) · sqrt(3 κ p_∞ / ρ)
+
+    # Target ratio = 0.033 (SBSL canonical). f_M_target = f_drive / 0.033.
+    # R₀_target derived from Minnaert: f_M = (1/(2π R₀))·√(3γ p_∞/ρ).
     rho_L = scenario.liquid.rho
-    kappa = pop.seed.kappa
+    gamma = pop.seed.gamma_g
     p_inf = scenario.ambient.p_inf
-    target_R0 = math.sqrt(3.0 * kappa * p_inf / rho_L) / (2.0 * math.pi * f_drive)
+    f_M_target = f_drive / 0.033
+    target_R0 = (math.sqrt(3.0 * gamma * p_inf / rho_L)
+                 / (2.0 * math.pi * f_M_target))
+
+    if ratio > 1.5:
+        diagnosis = (f"drive {f_drive:.0f} Hz is *above* Minnaert "
+                     f"{summary.minnaert_freq:.0f} Hz — bubble can't follow.")
+    else:
+        diagnosis = (f"drive {f_drive:.0f} Hz is too close to Minnaert "
+                     f"{summary.minnaert_freq:.0f} Hz (ratio {ratio:.2f}) — "
+                     f"bubble enters linear-resonance mode, no inertial "
+                     f"collapse.")
+
     return Suggestion(
-        severity="info",
+        severity="warning" if ratio > 1.5 else "info",
         category="parameter",
         rule_id="R7",
         message=(
-            f"Drive {f_drive:.0f} Hz vs Minnaert {summary.minnaert_freq:.0f} Hz "
-            f"(|Δ| = {octave_diff:.2f} octaves). Try R₀ = {target_R0*1e6:.2f} µm "
-            "to put the bubble at linear resonance."
+            diagnosis + f" For SBSL, target drive/Minnaert ≈ 0.033. "
+            f"Reduce R₀ to {target_R0*1e6:.2f} µm to lift Minnaert "
+            f"to {f_M_target/1000:.0f} kHz (ratio 0.033)."
         ),
-        rationale="§3.5 E5 — resonant bubble couples maximum energy from the "
-                  "drive into the radial mode.",
+        rationale="§3.5 — SBSL needs drive ~30× below Minnaert for "
+                  "inertial collapse. Drive at or above Minnaert puts "
+                  "the bubble in linear oscillation, no plasma.",
         dossier_ref="§3.5 / §14.3 R7",
         suggested_change={"bubble_population__seed__R0": target_R0},
-        expected_effect="R_max grows; collapse is more violent",
+        expected_effect=("regime moves out of linear oscillation into "
+                         "inertial collapse"),
     )
 
 
