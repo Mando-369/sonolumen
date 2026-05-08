@@ -36,6 +36,65 @@ def _accordion_item(title: str, body, item_id: str) -> dbc.AccordionItem:
     return dbc.AccordionItem(body, title=title, item_id=item_id)
 
 
+def _slider_with_input(
+    slider_id: str, *, slider_min: float, slider_max: float,
+    slider_value: float, slider_step: float,
+    input_id: str | None = None,
+    input_min: float | None = None, input_max: float | None = None,
+    input_step: float = 0,
+    marks: dict | None = None,
+    tooltip: dict | None = None,
+    units: str = "",
+):
+    """Slider paired with a clickable numeric input that mirrors its value.
+
+    The input has id `<slider_id>_input` by default. Bidirectional sync
+    is wired in `callbacks.register_callbacks` via clientside callbacks
+    — typing a value into the input snaps the slider to it (rounded by
+    the slider's step), dragging the slider updates the input live.
+
+    For log-scale sliders the slider stores the log value; pass the
+    log range via slider_min/slider_max and the linear range via
+    input_min/input_max — the bidirectional sync converts via 10^x.
+
+    `units` is just a small grey suffix label after the input box for
+    quick recognition (e.g. "Hz", "atm", "µm").
+    """
+    if input_id is None:
+        input_id = f"{slider_id}_input"
+    if input_min is None:
+        input_min = slider_min
+    if input_max is None:
+        input_max = slider_max
+    if input_step == 0:
+        input_step = slider_step
+
+    slider = dcc.Slider(
+        id=slider_id, min=slider_min, max=slider_max, value=slider_value,
+        step=slider_step, marks=marks or {},
+        tooltip=tooltip or {"placement": "top", "always_visible": False},
+    )
+    input_box = dbc.Input(
+        id=input_id, type="number",
+        min=input_min, max=input_max, step=input_step,
+        value=slider_value,        # default; clientside sync corrects on first drag
+        className="form-control form-control-sm",
+    )
+    return dbc.Row([
+        dbc.Col(slider, width=8, className="d-flex align-items-center"),
+        dbc.Col(
+            html.Div(
+                [input_box, html.Span(
+                    " " + units if units else "",
+                    className="text-muted small ms-1",
+                    style={"fontSize": "0.78em"},
+                )],
+                className="d-flex align-items-center",
+            ),
+            width=4),
+    ], className="g-2 align-items-center")
+
+
 # ---------------------------------------------------------------------------
 # §15.3 — Controls panel
 # ---------------------------------------------------------------------------
@@ -173,11 +232,14 @@ def _chamber_controls() -> html.Div:
                   className="text-muted small mt-1",
                   style={"fontSize": "0.78em", "fontStyle": "italic"}),
         html.Br(),
-        dbc.Label("Chamber radius (cm) — `chamber_radius`"),
-        dcc.Slider(
-            id="chamber_radius_cm", min=1, max=50, step=0.5, value=5,
+        dbc.Label("Chamber radius — `chamber_radius`"),
+        _slider_with_input(
+            slider_id="chamber_radius_cm", slider_min=1, slider_max=50,
+            slider_value=5, slider_step=0.5, input_step=0.1,
             marks={1: "1 cm", 5: "5 cm", 10: "10 cm", 25: "25 cm", 50: "50 cm"},
-            tooltip={"always_visible": False, "template": "{value} cm"},
+            tooltip={"placement": "top", "always_visible": False,
+                     "template": "{value} cm"},
+            units="cm",
         ),
         html.Br(),
         dbc.Label("Wall material — `wall_material.name`"),
@@ -240,27 +302,38 @@ def _ambient_controls() -> html.Div:
     # resolved value (kPa / MPa) live as the user drags. Tooltips are
     # placed on top so they don't get clipped by the Drive panel below.
     return html.Div([
-        dbc.Label("T_∞ (K) — `ambient_T` in dossier"),
-        dcc.Slider(id="ambient_T", min=273, max=323, value=293,
-                   step=1, marks={273: "0 °C", 293: "20 °C", 323: "50 °C"},
-                   tooltip={"placement": "top", "always_visible": False,
-                            "template": "{value} K"}),
+        dbc.Label("T_∞ — `ambient_T` in dossier"),
+        _slider_with_input(
+            slider_id="ambient_T", slider_min=273, slider_max=323,
+            slider_value=293, slider_step=1, input_step=0.1,
+            marks={273: "0 °C", 293: "20 °C", 323: "50 °C"},
+            tooltip={"placement": "top", "always_visible": False,
+                     "template": "{value} K"},
+            units="K",
+        ),
         html.Div(id="ambient_T_readout",
                   className="text-muted small mt-1",
                   style={"fontSize": "0.85em", "fontStyle": "italic"}),
         html.Br(),
         dbc.Label("p_∞ — `ambient_p`, covers vacuum → Mariana"),
-        dcc.Slider(
-            id="ambient_p", min=1.5, max=5.0, value=2.005, step=0.025,
+        # Slider stores log₁₀(kPa); paired input shows the actual kPa
+        # value via a log/linear conversion in the bidirectional sync
+        # callback wired in callbacks.py.
+        _slider_with_input(
+            slider_id="ambient_p", slider_min=1.5, slider_max=5.0,
+            slider_value=2.005, slider_step=0.025,
+            input_id="ambient_p_input",
+            input_min=30, input_max=100_000, input_step=1,
             marks={
-                1.5:  "30 kPa",         # high altitude / partial vacuum
-                2.0:  "1 atm",          # sea surface
-                3.0:  "1 MPa",          # ≈ 90 m seawater
-                4.0:  "10 MPa",         # ≈ 1 km seawater
-                5.0:  "100 MPa",        # ≈ 10 km — Challenger Deep
+                1.5:  "30 kPa",
+                2.0:  "1 atm",
+                3.0:  "1 MPa",
+                4.0:  "10 MPa",
+                5.0:  "100 MPa",
             },
             tooltip={"placement": "top", "always_visible": False,
                      "template": "log₁₀(kPa) = {value}"},
+            units="kPa",
         ),
         html.Div(id="ambient_p_readout",
                   className="text-muted small mt-1",
@@ -275,36 +348,53 @@ def _drive_controls() -> html.Div:
     # covers the SBSL operating regime densely; the auto-design panel can
     # reach above this when the user genuinely needs MHz-range drives.
     return html.Div([
-        dbc.Label("Drive frequency f (Hz) — `drive_f` in dossier"),
-        dcc.Slider(
-            id="drive_f", min=1_000, max=200_000, value=26_500, step=100,
+        dbc.Label("Drive frequency f — `drive_f` in dossier"),
+        _slider_with_input(
+            slider_id="drive_f", slider_min=1_000, slider_max=200_000,
+            slider_value=26_500, slider_step=100, input_step=1,
             marks={1_000: "1 kHz", 15_000: "15 kHz", 26_500: "26.5 kHz",
                    50_000: "50 kHz", 100_000: "100 kHz", 200_000: "200 kHz"},
-            tooltip={"always_visible": False,
+            tooltip={"placement": "top", "always_visible": False,
                      "template": "{value} Hz"},
+            units="Hz",
         ),
         html.Br(),
-        dbc.Label("Drive amplitude P_A (atm) — `drive_pa` in dossier"),
-        dcc.Slider(
-            id="drive_pa", min=0.1, max=10.0, value=1.32, step=0.05,
+        dbc.Label("Drive amplitude P_A — `drive_pa` in dossier"),
+        _slider_with_input(
+            slider_id="drive_pa", slider_min=0.1, slider_max=10.0,
+            slider_value=1.32, slider_step=0.05, input_step=0.01,
             marks={0.5: "0.5 atm", 1.0: "1 atm", 1.32: "1.32 atm",
                    3.0: "3 atm", 10.0: "10 atm"},
-            tooltip={"always_visible": False},
+            tooltip={"placement": "top", "always_visible": False},
+            units="atm",
         ),
         html.Br(),
         dbc.Label("Cycles to integrate"),
-        dcc.Slider(id="drive_cycles", min=1, max=20, step=1, value=8,
-                   marks={1: "1", 8: "8", 20: "20"}),
+        _slider_with_input(
+            slider_id="drive_cycles", slider_min=1, slider_max=20,
+            slider_value=8, slider_step=1, input_step=1,
+            marks={1: "1", 8: "8", 20: "20"},
+            tooltip={"placement": "top", "always_visible": False},
+            units="cycles",
+        ),
     ])
 
 
 def _bubble_controls() -> html.Div:
     return html.Div([
-        dbc.Label("Bubble R₀ (µm, log scale) — `bubble_R0` in dossier"),
-        dcc.Slider(
-            id="bubble_R0", min=-1, max=4, value=0.65, step=0.05,
-            marks={-1: "0.1", 0: "1", 1: "10", 2: "100", 3: "1000", 4: "10⁴"},
-            tooltip={"always_visible": False},
+        dbc.Label("Bubble R₀ — `bubble_R0` in dossier"),
+        # Slider stores log₁₀(R₀ in µm); paired input shows the actual
+        # µm value via the log/linear conversion in callbacks.py.
+        _slider_with_input(
+            slider_id="bubble_R0", slider_min=-1, slider_max=4,
+            slider_value=0.65, slider_step=0.05,
+            input_id="bubble_R0_input",
+            input_min=0.1, input_max=10_000, input_step=0.1,
+            marks={-1: "0.1 µm", 0: "1 µm", 1: "10 µm",
+                   2: "100 µm", 3: "1 mm", 4: "10 mm"},
+            tooltip={"placement": "top", "always_visible": False,
+                     "template": "log₁₀(µm) = {value}"},
+            units="µm",
         ),
         html.Br(),
         dbc.Label("Gas (mole fraction)"),
@@ -373,20 +463,29 @@ def _autodesign_controls() -> html.Div:
         the SBSL ridge — sub-Blake, off-resonance, or past Mach 0.3.
     """
     return html.Div([
-        dbc.Label("Target T_peak (kK)"),
-        dcc.Slider(id="autodesign_T_target_kK",
-                   min=5, max=50, step=1, value=20,
-                   marks={5: "5", 15: "15", 25: "25", 35: "35", 50: "50"},
-                   tooltip={"placement": "bottom", "always_visible": False,
-                            "template": "{value} kK"}),
+        dbc.Label("Target T_peak"),
+        _slider_with_input(
+            slider_id="autodesign_T_target_kK",
+            slider_min=5, slider_max=50, slider_value=20,
+            slider_step=1, input_step=0.5,
+            marks={5: "5", 15: "15", 25: "25", 35: "35", 50: "50"},
+            tooltip={"placement": "top", "always_visible": False,
+                     "template": "{value} kK"},
+            units="kK",
+        ),
         html.Br(),
         dbc.Switch(id="autodesign_must_be_stable", value=True,
                    label="Require stable_spherical regime"),
         html.Br(),
-        dbc.Label("Max transducer P_A (atm) — feasibility"),
-        dcc.Slider(id="autodesign_max_pa", min=1, max=20, step=0.5, value=5.0,
-                   marks={1: "1", 5: "5", 10: "10", 20: "20"},
-                   tooltip={"placement": "bottom", "always_visible": False}),
+        dbc.Label("Max transducer P_A — feasibility"),
+        _slider_with_input(
+            slider_id="autodesign_max_pa",
+            slider_min=1, slider_max=20, slider_value=5.0,
+            slider_step=0.5, input_step=0.1,
+            marks={1: "1", 5: "5", 10: "10", 20: "20"},
+            tooltip={"placement": "top", "always_visible": False},
+            units="atm",
+        ),
         html.Hr(),
         dbc.Row([
             dbc.Col(dbc.Button("Find parameters", id="autodesign_find_btn",
@@ -455,9 +554,15 @@ def _autodesign_controls() -> html.Div:
 
 def _numerics_controls() -> html.Div:
     return html.Div([
-        dbc.Label("rtol (log10)"),
-        dcc.Slider(id="num_rtol", min=-13, max=-6, value=-11, step=1,
-                   marks={-13: "1e-13", -11: "1e-11", -8: "1e-8", -6: "1e-6"}),
+        dbc.Label("rtol (relative tolerance, log10) — `num_rtol`"),
+        _slider_with_input(
+            slider_id="num_rtol", slider_min=-13, slider_max=-6,
+            slider_value=-11, slider_step=1, input_step=1,
+            marks={-13: "1e-13", -11: "1e-11", -8: "1e-8", -6: "1e-6"},
+            tooltip={"placement": "top", "always_visible": False,
+                     "template": "log₁₀ = {value}"},
+            units="log₁₀",
+        ),
         html.Br(),
         dbc.Label("Convergence test"),
         dbc.Switch(id="num_conv", value=False, label="Enable §11.5 #5 ΔT_peak check"),

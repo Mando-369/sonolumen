@@ -1244,6 +1244,100 @@ def register_callbacks(app: Any) -> None:
         return False, last_loaded
 
     # ----------------------------------------------------------------------
+    # Bidirectional slider ↔ input sync. Each numeric slider has a
+    # paired clickable input box (built by `_slider_with_input` in the
+    # layout). Two clientside callbacks per pair:
+    #
+    #   slider -> input : mirror the slider's value into the input
+    #   input  -> slider: snap the slider to the typed value
+    #
+    # For log-scale sliders (ambient_p, bubble_R0) the slider stores
+    # the log value while the input shows the linear value; the
+    # conversion is in the JS callback. Equality guard (>1e-6 abs diff)
+    # breaks the loop when both sides agree.
+    # ----------------------------------------------------------------------
+    def _wire_slider_input_pair(slider_id, input_id, scale="linear"):
+        """Register two clientside callbacks for one slider/input pair.
+
+        scale="linear": values are equal between slider and input.
+        scale="log10":  slider stores log₁₀(x); input shows x.
+        """
+        # slider -> input
+        if scale == "log10":
+            slider_to_input_js = f"""
+            function(slider_value, current_input) {{
+                if (slider_value === null || slider_value === undefined) return current_input;
+                const linear = Math.pow(10, slider_value);
+                if (current_input !== null && current_input !== undefined
+                    && Math.abs((Math.log10(current_input) - slider_value)) < 0.001)
+                    return current_input;
+                return Math.round(linear * 100) / 100;
+            }}
+            """
+        else:
+            slider_to_input_js = f"""
+            function(slider_value, current_input) {{
+                if (slider_value === null || slider_value === undefined) return current_input;
+                if (current_input !== null && current_input !== undefined
+                    && Math.abs(current_input - slider_value) < 1e-6)
+                    return current_input;
+                return slider_value;
+            }}
+            """
+        app.clientside_callback(
+            slider_to_input_js,
+            Output(input_id, "value"),
+            Input(slider_id, "value"),
+            State(input_id, "value"),
+        )
+        # input -> slider
+        if scale == "log10":
+            input_to_slider_js = f"""
+            function(input_value, current_slider) {{
+                if (input_value === null || input_value === undefined || input_value <= 0)
+                    return current_slider;
+                const log_v = Math.log10(input_value);
+                if (current_slider !== null && current_slider !== undefined
+                    && Math.abs(log_v - current_slider) < 0.001)
+                    return current_slider;
+                return Math.round(log_v * 1000) / 1000;
+            }}
+            """
+        else:
+            input_to_slider_js = f"""
+            function(input_value, current_slider) {{
+                if (input_value === null || input_value === undefined)
+                    return current_slider;
+                if (current_slider !== null && current_slider !== undefined
+                    && Math.abs(input_value - current_slider) < 1e-6)
+                    return current_slider;
+                return input_value;
+            }}
+            """
+        app.clientside_callback(
+            input_to_slider_js,
+            Output(slider_id, "value", allow_duplicate=True),
+            Input(input_id, "value"),
+            State(slider_id, "value"),
+            prevent_initial_call=True,
+        )
+
+    # Wire every slider/input pair created by `_slider_with_input` in
+    # layout.py. Order: chamber → ambient → drive → bubble → numerics
+    # → auto-design.
+    _wire_slider_input_pair("chamber_radius_cm", "chamber_radius_cm_input")
+    _wire_slider_input_pair("ambient_T", "ambient_T_input")
+    _wire_slider_input_pair("ambient_p", "ambient_p_input", scale="log10")
+    _wire_slider_input_pair("drive_f", "drive_f_input")
+    _wire_slider_input_pair("drive_pa", "drive_pa_input")
+    _wire_slider_input_pair("drive_cycles", "drive_cycles_input")
+    _wire_slider_input_pair("bubble_R0", "bubble_R0_input", scale="log10")
+    _wire_slider_input_pair("num_rtol", "num_rtol_input")
+    _wire_slider_input_pair("autodesign_T_target_kK",
+                             "autodesign_T_target_kK_input")
+    _wire_slider_input_pair("autodesign_max_pa", "autodesign_max_pa_input")
+
+    # ----------------------------------------------------------------------
     # Live readouts for log-scale ambient sliders. p_∞ is stored as
     # log₁₀(kPa); the readout shows the actual pressure in human units
     # (Pa / kPa / MPa with seawater-depth equivalent). T_∞ readout
