@@ -1,0 +1,210 @@
+{
+  "_fields": {
+    "ambient": {
+      "_fields": {
+        "T_inf": 293.15,
+        "g": 9.81,
+        "p_inf": 101325.0
+      },
+      "_type": "AmbientConditions"
+    },
+    "bubble_population": {
+      "_fields": {
+        "crowding_factor": 0.0,
+        "kind": "impulsive",
+        "nucleation_event": {
+          "_fields": {
+            "R_max": 0.0035,
+            "Rdot0": 0.0,
+            "T0": 293.15,
+            "p_gas_initial": 1000.0
+          },
+          "_type": "ImpulsivePulse"
+        },
+        "nuclei_density": null,
+        "nucleus_size_distribution": null,
+        "rectified_diffusion": true,
+        "seed": {
+          "_fields": {
+            "R0": 0.0035,
+            "Rdot0": 0.0,
+            "T0": 293.15,
+            "gamma_g": 1.4,
+            "gas_composition": {
+              "Ar": 0.0093,
+              "N2": 0.78,
+              "O2": 0.21
+            },
+            "kappa": 1.4,
+            "p_gas_initial": 1000.0,
+            "seed_method": "freeze_at_nucleation",
+            "toroidal_correction_factor": 1.0
+          },
+          "_type": "BubbleSeed"
+        },
+        "seed_position": {
+          "_tuple": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "_type": "BubblePopulation"
+    },
+    "chamber": {
+      "_fields": {
+        "Q": 100.0,
+        "fill_fraction": 1.0,
+        "geometry": "sphere",
+        "length": null,
+        "radius": 0.05,
+        "wall_material": {
+          "_fields": {
+            "E": 208000000000.0,
+            "L_hard": 5e-05,
+            "Vickers_H": 2800000000.0,
+            "chemical_compatibility": {
+              "_tuple": [
+                "water",
+                "seawater",
+                "H2SO4_98"
+              ]
+            },
+            "fatigue_limit": 420000000.0,
+            "name": "inconel_625",
+            "p_Y_dynamic": 900000000.0,
+            "rho": 8440.0,
+            "sigma_UTS": 850000000.0,
+            "sigma_Y": 450000000.0,
+            "transparent": false
+          },
+          "_type": "WallMaterial"
+        },
+        "wall_thickness": 0.005
+      },
+      "_type": "Chamber"
+    },
+    "drive": {
+      "_fields": {
+        "pll_lock": false,
+        "sweep": null,
+        "waveforms": {}
+      },
+      "_type": "DriveSchedule"
+    },
+    "liquid": {
+      "_fields": {
+        "B_tait": 305000000.0,
+        "alpha_dB_cm_MHz2": 0.025,
+        "beta_BoverA": 3.5,
+        "c": 1530.0,
+        "mu": 0.00108,
+        "n_tait": 7.15,
+        "name": "seawater",
+        "p_v": 2300.0,
+        "rho": 1025.0,
+        "sigma": 0.075
+      },
+      "_type": "LiquidProperties"
+    },
+    "metadata": {
+      "name": "shrimp_in_inconel_5cm",
+      "notes": "Pistol shrimp in 5 cm Inconel 625 sphere. Best fatigue resistance for repeated shocks (~70 MPa fatigue limit). Opaque, expensive but indefinite cycling.",
+      "version": "0.2.0.dev0"
+    },
+    "numerics": {
+      "_fields": {
+        "atol": 1e-13,
+        "convergence_test": false,
+        "integrator": "LSODA",
+        "n_output": 0,
+        "output_log_spacing": true,
+        "rtol": 1e-09,
+        "t_total": 0.0004
+      },
+      "_type": "NumericsOptions"
+    },
+    "observers": [
+      {
+        "_fields": {
+          "QE_peak": 0.25,
+          "R_load": 50.0,
+          "aperture_radius": 0.005,
+          "gain": 1000000.0,
+          "name": "PMT",
+          "position": {
+            "_tuple": [
+              0.05,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        "_type": "PMTObserver"
+      },
+      {
+        "_fields": {
+          "name": "hydrophone",
+          "position": {
+            "_tuple": [
+              0.01,
+              0.0,
+              0.0
+            ]
+          },
+          "sensitivity_V_per_Pa": 5e-05
+        },
+        "_type": "HydrophoneObserver"
+      },
+      {
+        "_fields": {
+          "Q_b": 1e-11,
+          "enable": false,
+          "name": "coil",
+          "position": {
+            "_tuple": [
+              0.01,
+              0.0,
+              0.0
+            ]
+          },
+          "pulse_duration_s": 1e-07
+        },
+        "_type": "PickupCoilObserver"
+      }
+    ],
+    "output": {
+      "_fields": {
+        "bubble": true,
+        "detectors": true,
+        "em": true,
+        "plasma": true,
+        "spectrum_lambda_nm": {
+          "_tuple": [
+            200.0,
+            1000.0,
+            100
+          ]
+        }
+      },
+      "_type": "OutputOptions"
+    },
+    "physics_options": {
+      "_fields": {
+        "bubble_eq": "keller_miksis",
+        "em_model": "auto",
+        "gas_eos": "polytropic",
+        "include_chemistry": false,
+        "include_margulis_transient": false,
+        "ionization_model": "stewart_pyatt",
+        "liquid_eos": "tait",
+        "thermal_model": "toegel",
+        "vapour_cap": true
+      },
+      "_type": "PhysicsOptions"
+    },
+    "transducers": []
+  },
+  "_type": "Scenario"
+}

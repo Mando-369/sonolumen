@@ -1,0 +1,244 @@
+{
+  "_fields": {
+    "ambient": {
+      "_fields": {
+        "T_inf": 293.15,
+        "g": 9.81,
+        "p_inf": 101325.0
+      },
+      "_type": "AmbientConditions"
+    },
+    "bubble_population": {
+      "_fields": {
+        "crowding_factor": 0.0,
+        "kind": "single_trapped",
+        "nucleation_event": null,
+        "nuclei_density": null,
+        "nucleus_size_distribution": null,
+        "rectified_diffusion": true,
+        "seed": {
+          "_fields": {
+            "R0": 4.5e-06,
+            "Rdot0": 0.0,
+            "T0": 293.15,
+            "gamma_g": 1.6666666666666667,
+            "gas_composition": {
+              "Ar": 0.99,
+              "H2O": 0.01
+            },
+            "kappa": 1.4,
+            "p_gas_initial": null,
+            "seed_method": "rectified_diffusion_equilibrium",
+            "toroidal_correction_factor": 1.0
+          },
+          "_type": "BubbleSeed"
+        },
+        "seed_position": {
+          "_tuple": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "_type": "BubblePopulation"
+    },
+    "chamber": {
+      "_fields": {
+        "Q": 1000.0,
+        "fill_fraction": 1.0,
+        "geometry": "sphere",
+        "length": null,
+        "radius": 0.05,
+        "wall_material": {
+          "_fields": {
+            "E": 64000000000.0,
+            "L_hard": 5e-06,
+            "Vickers_H": 5500000000.0,
+            "chemical_compatibility": {
+              "_tuple": [
+                "water",
+                "seawater",
+                "ethanol"
+              ]
+            },
+            "fatigue_limit": 30000000.0,
+            "name": "borosilicate_glass",
+            "p_Y_dynamic": 200000000.0,
+            "rho": 2230.0,
+            "sigma_UTS": 60000000.0,
+            "sigma_Y": 100000000.0,
+            "transparent": true
+          },
+          "_type": "WallMaterial"
+        },
+        "wall_thickness": 0.003
+      },
+      "_type": "Chamber"
+    },
+    "drive": {
+      "_fields": {
+        "pll_lock": false,
+        "sweep": null,
+        "waveforms": {
+          "pzt4_ring": {
+            "_fields": {
+              "P_A": 151987.5,
+              "custom_p_a": null,
+              "decay_time": null,
+              "envelope": null,
+              "f": 28600.0,
+              "kind": "sinusoid",
+              "n_cycles": 10,
+              "peak_pressure": null,
+              "phase": 0.0,
+              "rise_time": null,
+              "standing_wave_factor": 1.0
+            },
+            "_type": "AcousticDrive"
+          }
+        }
+      },
+      "_type": "DriveSchedule"
+    },
+    "liquid": {
+      "_fields": {
+        "B_tait": 300000000.0,
+        "alpha_dB_cm_MHz2": 0.1,
+        "beta_BoverA": 4.5,
+        "c": 1430.0,
+        "mu": 0.024,
+        "n_tait": 7.0,
+        "name": "sulfuric_98",
+        "p_v": 1.0,
+        "rho": 1840.0,
+        "sigma": 0.055
+      },
+      "_type": "LiquidProperties"
+    },
+    "metadata": {
+      "name": "suslick_h2so4_ar_sbsl",
+      "notes": "Suslick high-T_peak SBSL: 98% H2SO4 + Ar in 5 cm Pyrex sphere, mode n=2 (28.6 kHz), P_A=1.5 atm. Near-zero vapor pressure \u2192 expected T_peak ~30 kK. CORROSIVE: PTFE seals only, exhaust hood.",
+      "version": "0.2.0.dev0"
+    },
+    "numerics": {
+      "_fields": {
+        "atol": 1e-15,
+        "convergence_test": false,
+        "integrator": "LSODA",
+        "n_output": 0,
+        "output_log_spacing": false,
+        "rtol": 1e-11,
+        "t_total": 0.0003018867924528302
+      },
+      "_type": "NumericsOptions"
+    },
+    "observers": [
+      {
+        "_fields": {
+          "QE_peak": 0.25,
+          "R_load": 50.0,
+          "aperture_radius": 0.005,
+          "gain": 1000000.0,
+          "name": "PMT_R7400U",
+          "position": {
+            "_tuple": [
+              0.05,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        "_type": "PMTObserver"
+      },
+      {
+        "_fields": {
+          "name": "hydrophone_B&K_8103",
+          "position": {
+            "_tuple": [
+              0.01,
+              0.0,
+              0.0
+            ]
+          },
+          "sensitivity_V_per_Pa": 5e-05
+        },
+        "_type": "HydrophoneObserver"
+      },
+      {
+        "_fields": {
+          "gate_t_hi": null,
+          "gate_t_lo": null,
+          "name": "spectro_HR4000",
+          "position": {
+            "_tuple": [
+              0.05,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        "_type": "SpectrometerObserver"
+      }
+    ],
+    "output": {
+      "_fields": {
+        "bubble": true,
+        "detectors": true,
+        "em": true,
+        "plasma": true,
+        "spectrum_lambda_nm": {
+          "_tuple": [
+            200.0,
+            1000.0,
+            100
+          ]
+        }
+      },
+      "_type": "OutputOptions"
+    },
+    "physics_options": {
+      "_fields": {
+        "bubble_eq": "keller_miksis",
+        "em_model": "auto",
+        "gas_eos": "vdw_hardcore",
+        "include_chemistry": false,
+        "include_margulis_transient": false,
+        "ionization_model": "stewart_pyatt",
+        "liquid_eos": "tait",
+        "thermal_model": "toegel",
+        "vapour_cap": true
+      },
+      "_type": "PhysicsOptions"
+    },
+    "transducers": [
+      {
+        "_fields": {
+          "aperture": 0.025,
+          "coupling_efficiency": 0.6,
+          "impedance_matched": true,
+          "kind": "piezo_ring",
+          "max_acoustic_power_W": 100.0,
+          "name": "pzt4_ring",
+          "nominal_frequency": 26500.0,
+          "orientation": {
+            "_tuple": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          "position": {
+            "_tuple": [
+              0.0,
+              0.0,
+              0.05
+            ]
+          }
+        },
+        "_type": "Transducer"
+      }
+    ]
+  },
+  "_type": "Scenario"
+}
