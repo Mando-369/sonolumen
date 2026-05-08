@@ -539,6 +539,14 @@ def results_panel() -> dbc.Card:
                 html.H6("Wall + transducer + thermal"),
                 html.Div(id="material_summary",
                          className="text-muted small"),
+
+                # Wall pressure capability — what the chosen material +
+                # geometry can take, vs. what the simulation predicts the
+                # wall sees during collapse. Updated live as the user
+                # changes wall_material / radius / thickness.
+                html.Hr(),
+                html.H6("Wall pressure capability"),
+                html.Div(id="wall_capability_card"),
             ]),
         ],
     )

@@ -632,6 +632,156 @@ def render_caveats(result_payload: Optional[dict]) -> list:
     return items or [html.Em("(none)")]
 
 
+def wall_pressure_capability(scenario: Any) -> dict:
+    """Compute the wall material's pressure ratings for the current chamber.
+
+    Returns a dict with four MPa-valued caps:
+
+      * static_yield_MPa   — DC internal pressure causing wall yield
+                              (Tresca, thick sphere): P = (2/3)·σ_Y·(1−(a/b)³)
+      * static_collapse_MPa — DC pressure for full-section plastic collapse:
+                              P = 2·σ_Y·ln(b/a)
+      * dynamic_yield_MPa  — single-impulse yield (p_Y_dynamic, ~1.5–2× σ_Y)
+      * fatigue_MPa        — high-cycle fatigue limit (relevant for SBSL
+                              continuous operation, ~10⁹ shock cycles)
+
+    Different ratings apply to different scenarios:
+
+      * pistol_shrimp / single-shot impulse → compare peak wall pressure
+        to dynamic_yield_MPa
+      * SBSL continuous operation         → compare to fatigue_MPa
+      * static ambient `p_∞` only         → compare to static_yield_MPa
+    """
+    import math
+    chamber = scenario.chamber
+    wall = chamber.wall_material
+    a = max(chamber.radius, 1e-6)
+    b = a + max(chamber.wall_thickness, 1e-6)
+
+    # Tresca thick-sphere — only valid for closed cavities (sphere /
+    # cylinder). Open-bath geometries don't have a wall pressure rating.
+    if chamber.geometry not in ("sphere", "cylinder_axial", "cylinder_radial"):
+        return {
+            "geometry_supports_wall": False,
+            "static_yield_MPa": None,
+            "static_collapse_MPa": None,
+            "dynamic_yield_MPa": None,
+            "fatigue_MPa": None,
+            "wall_name": wall.name if wall else "n/a",
+        }
+
+    # σ_Y is in Pa; thickness ratio gives a dimensionless multiplier.
+    sigma_Y = max(wall.sigma_Y, 1.0)
+    static_yield = (2.0 / 3.0) * sigma_Y * (1.0 - (a / b) ** 3)
+    static_collapse = 2.0 * sigma_Y * math.log(b / a)
+
+    # Dynamic & fatigue limits are absolute material caps — same factor
+    # of (1 − (a/b)³) applied so the geometry shows up.
+    dynamic_yield = (2.0 / 3.0) * wall.p_Y_dynamic * (1.0 - (a / b) ** 3)
+    fatigue = (2.0 / 3.0) * wall.fatigue_limit * (1.0 - (a / b) ** 3)
+
+    return {
+        "geometry_supports_wall": True,
+        "static_yield_MPa": static_yield / 1e6,
+        "static_collapse_MPa": static_collapse / 1e6,
+        "dynamic_yield_MPa": dynamic_yield / 1e6,
+        "fatigue_MPa": fatigue / 1e6,
+        "wall_name": wall.name,
+        "wall_thickness_mm": chamber.wall_thickness * 1000.0,
+        "chamber_radius_cm": chamber.radius * 100.0,
+    }
+
+
+def render_wall_capability_card(scenario: Any,
+                                  result_payload: Optional[dict]) -> Any:
+    """UI card showing what the wall can take vs what the run delivers.
+
+    Pulls wall_pressure_capability() for the static numbers, then if a
+    result is available shows peak wall pressure from the §13 observer
+    and a colour-coded margin.
+    """
+    if scenario is None:
+        return html.Em("Pick a chamber to see wall ratings.",
+                        style={"opacity": 0.6})
+    cap = wall_pressure_capability(scenario)
+    if not cap.get("geometry_supports_wall"):
+        return html.Div([
+            html.Em(f"Geometry '{scenario.chamber.geometry}' has no closed "
+                     f"wall — pressure ratings don't apply."),
+        ], className="text-muted small")
+
+    rows = [
+        html.Tr([html.Td("Wall material"), html.Td(cap["wall_name"])]),
+        html.Tr([html.Td("Geometry"),
+                  html.Td(f"R={cap['chamber_radius_cm']:.1f} cm, "
+                          f"t={cap['wall_thickness_mm']:.1f} mm")]),
+        html.Tr([html.Td("Static yield (DC pressure)"),
+                  html.Td(f"{cap['static_yield_MPa']:.1f} MPa")]),
+        html.Tr([html.Td("Static plastic collapse"),
+                  html.Td(f"{cap['static_collapse_MPa']:.1f} MPa")]),
+        html.Tr([html.Td("Dynamic yield (single shock)"),
+                  html.Td(f"{cap['dynamic_yield_MPa']:.1f} MPa")]),
+        html.Tr([html.Td("Fatigue limit (cyclic)"),
+                  html.Td(f"{cap['fatigue_MPa']:.1f} MPa")]),
+    ]
+
+    # Compare against the actual peak wall pressure from §13 observer.
+    margin_block: list = []
+    if result_payload:
+        wall_loads = result_payload.get("wall_loads") or {}
+        peak_wall_pa = 0.0
+        # observer_traces may include a stress probe with a wall_pressure col
+        for sub in (result_payload.get("observer_traces") or {}).values():
+            wp = sub.get("wall_pressure") or []
+            if wp:
+                try:
+                    peak_wall_pa = max(peak_wall_pa, max(abs(x) for x in wp))
+                except ValueError:
+                    pass
+        if peak_wall_pa <= 0.0:
+            # Fall back to peak_pressure_at_observer (hydrophone) as a
+            # rough proxy when no stress probe was attached.
+            for v in (result_payload.get("summary", {})
+                       .get("peak_pressure_at_observer") or {}).values():
+                peak_wall_pa = max(peak_wall_pa, abs(float(v or 0.0)))
+        if peak_wall_pa > 0.0:
+            peak_MPa = peak_wall_pa / 1e6
+            # Compute margins
+            dyn_margin = (cap["dynamic_yield_MPa"] - peak_MPa) \
+                / max(cap["dynamic_yield_MPa"], 1e-9)
+            fat_margin = (cap["fatigue_MPa"] - peak_MPa) \
+                / max(cap["fatigue_MPa"], 1e-9)
+            colour = ("success" if peak_MPa < cap["fatigue_MPa"]
+                       else "warning" if peak_MPa < cap["dynamic_yield_MPa"]
+                       else "danger")
+            verdict = (
+                "OK — peak below fatigue limit, chamber survives "
+                "indefinite cycling." if colour == "success"
+                else "Cyclic risk — peak above fatigue limit but below "
+                "dynamic yield. Single-shot OK, repeat use erodes the wall."
+                if colour == "warning"
+                else "Wall failure — peak EXCEEDS dynamic yield. The "
+                "chamber would crack on this shot."
+            )
+            margin_block = [
+                html.Hr(className="my-2"),
+                html.Div([
+                    html.B(f"Peak wall pressure: {peak_MPa:.1f} MPa"),
+                    html.Br(),
+                    html.Span(f"vs dynamic yield: margin {dyn_margin*100:+.0f}%"),
+                    html.Br(),
+                    html.Span(f"vs fatigue limit: margin {fat_margin*100:+.0f}%"),
+                ]),
+                dbc.Alert(verdict, color=colour, className="py-1 mt-2 mb-0",
+                           style={"fontSize": "0.85em"}),
+            ]
+
+    return html.Div([
+        dbc.Table(html.Tbody(rows), striped=True, hover=False, size="sm",
+                   className="mb-0", style={"fontSize": "0.85em"}),
+    ] + margin_block)
+
+
 def render_material_summary(result_payload: Optional[dict]) -> list:
     if not result_payload:
         return []
@@ -1141,15 +1291,22 @@ def register_callbacks(app: Any) -> None:
         Output("suggestions_list", "children"),
         Output("caveats_list", "children"),
         Output("material_summary", "children"),
+        Output("wall_capability_card", "children"),
         Input("result_store", "data"),
+        Input("scenario_store", "data"),
     )
-    def _render_results(result_payload):                                # noqa: ANN001
+    def _render_results(result_payload, scenario_payload):              # noqa: ANN001
+        # The wall capability table updates live with the chamber/wall
+        # controls (scenario_store input) regardless of whether a run
+        # has been performed; the margin block only appears after TEST.
+        scenario = scenario_from_store(scenario_payload)
         return (
             render_regime_card(result_payload),
             render_headline_table(result_payload),
             render_suggestions(result_payload),
             render_caveats(result_payload),
             render_material_summary(result_payload),
+            render_wall_capability_card(scenario, result_payload),
         )
 
     # Listen button → set <audio> src to base64 WAV
