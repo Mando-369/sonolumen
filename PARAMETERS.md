@@ -418,14 +418,79 @@ Plus two coloured banners:
 
 ---
 
-## 6. Physics *(to be documented)*
+## 6. Physics
 
-Currently exposes:
-- `phys_bubble_eq` — Keller–Miksis / Rayleigh–Plesset / Gilmore
-- `phys_thermal` — Toegel / polytropic
-- `phys_ionization` — Stewart–Pyatt / ideal Saha
+Three dropdowns, each picking the model used for one piece of the
+collapse physics. Defaults marked ⭐ are what the SBSL canonical
+preset uses and what every modern paper benchmarks against.
 
-(Not yet expanded.)
+### `phys_bubble_eq` — Radial dynamics ODE
+
+How `R(t)` evolves. Ordered by accuracy at high Mach:
+
+| Choice | What it does | Use when |
+|---|---|---|
+| `rayleigh_plesset` | `ρRR̈ + (3/2)ρṘ² = p_L − p_∞ − p_a(t) − 2σ/R − 4µṘ/R`. Incompressible liquid, no radiation damping. | Quick sanity / pedagogy. Breaks down at Mach > 0.3, undershoots T_peak in violent collapse. |
+| **`keller_miksis`** ⭐ | RP plus first-order Mach corrections `(1±Ṙ/c)` + radiation term `(R/c)·dp_L/dt`. | **Default**. Handles Mach up to ~1. Used by Lofstedt 1995, Hilgenfeldt 1998, Brenner 2002. |
+| `gilmore` | Full nonlinear liquid compressibility via Tait EOS. Local `C(p_L)` instead of constant `c`. | Very violent collapses with transient supersonic wall speeds (Suslick H₂SO₄+Xe, deep-ocean shrimp). |
+
+For SBSL canonical (Mach ~ 0.6 at collapse):
+- RP gives T_peak ≈ 12 kK (under-reports ~30 %)
+- KM gives T_peak ≈ 18 kK (matches experiment)
+- Gilmore gives T_peak ≈ 20 kK (highest, most accurate at extreme conditions)
+
+### `phys_thermal` — Gas heating model
+
+How energy moves inside the bubble during compression/expansion.
+
+| Choice | What it tracks | Use when |
+|---|---|---|
+| **`toegel`** ⭐ | Reduced ODE (Toegel et al. 2002): gas T_g, heat conduction at wall, water-vapor diffusion in/out, endothermic H₂O → H + OH dissociation. **Captures vapor quenching of T_peak.** | **Default**. Required for quantitative T_peak / photon work. |
+| `polytropic` | `p·V^κ = const`; T = T_0·(R₀/R)^(3(κ−1)). No vapor, no chemistry. | Fast sanity. Overestimates T_peak by ~2× in water (misses vapor quench); accurate for vapor-free gases like Ar at low p_v. |
+
+The reason water bubbles only reach ~20 kK while Suslick's H₂SO₄
+hits 30–40 kK is exactly the vapor-quench effect that Toegel
+captures and polytropic doesn't.
+
+### `phys_ionization` — Saha-type ionization
+
+How gas temperature converts to electron density `n_e`.
+
+| Choice | What it accounts for | Use when |
+|---|---|---|
+| **`stewart_pyatt`** ⭐ | Saha + continuum lowering: at high density (~10²⁵ m⁻³, near solid density), effective ionization energy drops as charges screen each other. | **Default**. Correct model for the dense plasma in bubble collapse. |
+| `ideal_saha` | Textbook Saha: `n_e²/n_neutral = (2π·m_e·k_B·T/h²)^(3/2) · 2g_+/g_0 · exp(−χ_ion/k_B T)`. No continuum lowering. | Low-density-limit comparison. Overestimates `n_e` at SBSL collapse density. |
+
+For SBSL (T_peak ≈ 20 kK, n_e ≈ 10²⁵ m⁻³): Stewart-Pyatt and
+ideal Saha disagree by ~2× on n_e. For Suslick (T_peak ≈ 35 kK):
+disagreement smaller because thermal ionization dominates.
+
+### Hidden physics options (not in UI)
+
+These live on `PhysicsOptions` in `cavplasma.config` and are
+preset-controlled:
+
+| Option | Default | What it does |
+|---|---|---|
+| `vapour_cap` | True | clip water-vapor mole fraction at saturation (prevents unphysical accumulation) |
+| `em_model` | `"auto"` | radiation: `"blackbody"` / `"lines"` / `"auto"` (picks based on T) |
+| `liquid_eos` | `"tait"` | `"tait"` / `"incompressible"` — used by all three bubble equations |
+| `gas_eos` | `"vdw_hardcore"` | gas EOS: `"vdw_hardcore"` (van der Waals with hard-core volume) / `"ideal"` / `"polytropic"` |
+| `include_chemistry` | False | full multi-species reaction network (slow); not currently wired |
+| `include_margulis_transient` | False | Margulis transient correction; minor effect |
+
+### How the three dropdowns interact
+
+| Dropdown | Dominates | Affects in result |
+|---|---|---|
+| `bubble_eq` | collapse violence (R(t), peak Mach, R_min) | T_peak indirectly via compression ratio; flash FWHM |
+| `thermal_model` | gas temperature evolution; vapor quenching | T_peak directly; n_e via T |
+| `ionization_model` | T → n_e mapping | photons (4π), spectrum surface, PMT trace |
+
+For published-quality results: stick to the canonical trio
+**`keller_miksis` + `toegel` + `stewart_pyatt`**. Switch only one at
+a time when comparing to alternative models — never all three at
+once, or you'll lose track of which choice caused the change.
 
 ---
 
