@@ -566,13 +566,123 @@ card itself flags convergence problems.
 
 ---
 
-## 8. Auto-design *(to be documented)*
+## 8. Auto-design
 
-Inverse-design panel. Target T_peak + filters → heuristic or grid-
-refined scenario. Plus auto-adapt toggle that proposes coupled
-slider values via Minnaert ratio.
+Three independent layers in one accordion section: inverse design
+(one-shot, target → parameters), auto-adapt (live coupling
+proposals), and the always-on status chip (analytical regime
+predictor). Each layer runs independently — you can use the chip
+without ever touching the inverse-design buttons, and vice versa.
 
-(Walk-through TBD.)
+### Layer 1 — Inverse design (target → parameters)
+
+Set a target outcome, get parameters. Two modes: instant heuristic
+or ~15-second grid refinement.
+
+#### `autodesign_T_target_kK` — Target peak temperature (kK)
+
+Slider 5–50 kK, with paired input. Drives the `initial_design`
+heuristic and the `refine_design` scoring function.
+
+#### `autodesign_must_be_stable` — toggle (default ON)
+
+Filter applied during refinement. When ON, any grid point that
+doesn't classify as `stable_spherical` gets a +100 score penalty
+— effectively dropped. When OFF, the search accepts
+marginal/unstable hits if closer to the T_peak target.
+
+#### `autodesign_max_pa` — Max transducer P_A (atm)
+
+Feasibility filter (default 5 atm). If a design would require a
+transducer P_A above this, it gets penalised in the score function.
+Catches the "stable but requires 1400 atm transducer" trap from
+the §20 dossier note.
+
+#### Find parameters button — heuristic (instant)
+
+Three rules:
+- `drive_f` → chamber radial mode n=2 (~30 kHz for 5 cm sphere — the canonical SBSL operating mode)
+- `R₀` → derived from Minnaert relation (set f_M ≈ 5× drive freq), clamped to [2, 8 µm]
+- `P_A` → empirical interpolation: `P_A_atm = 1.0 + 0.025 × T_target_kK`, capped at 1.8 atm
+
+Returns a scenario plus a diagnostic with the rationale for each
+choice. The diagnostic shows up below the buttons as a three-bullet
+"how it picked the parameters" block.
+
+#### Refine button — 3×3 grid search (~15 s)
+
+Runs 9 forward simulations around the heuristic point, sweeping
+P_A by ±20 % and R₀ by ±30 %. Scoring:
+
+```
+score = (log10(T_peak / T_target))²
+      + 100 if regime != stable_spherical  (when toggle ON)
+      + 10·log10(req_transducer_P_A / max_pa)  if exceeds limit
+```
+
+Lower score wins. Returns the best grid point plus a refinement
+summary (n_evaluations, best score, T_peak, regime, R_max, Mach).
+
+### Layer 2 — Auto-adapt (couple sliders via Minnaert ratio)
+
+#### `couple_sliders_toggle` (default OFF)
+
+When ON, dragging `drive_f` or `bubble_R0` *proposes* (does not
+apply) a partner value that keeps the drive/Minnaert ratio at the
+SBSL canonical value of 0.033.
+
+Math: `f_M ∝ 1/R₀`, so `f_drive · R₀ = const` keeps the ratio
+constant. The constant is `0.033 · √(3γp_∞/ρ)/(2π) ≈ 0.118` in
+canonical (Hz·m) units.
+
+#### Proposal card — Apply / Dismiss
+
+Appears below the toggle when a drag would shift the partner by
+>5 % relative. Shows the suggestion with rationale, plus two
+buttons:
+- **Apply** → writes proposed value to the partner slider, clears proposal
+- **Dismiss** → clears the proposal, leaves sliders alone
+- Toggling auto-adapt OFF also clears any pending proposal
+
+The originally-dragged slider commits immediately (same path as
+non-coupling mode); only the *partner* is gated by Apply/Dismiss.
+This way you don't lose your own input even if you ignore the
+suggestion.
+
+### Layer 3 — Live status chip (always-on)
+
+Coloured pill at the bottom of the panel; updates instantly as
+the user drags drive_f, drive_pa, or bubble_R0. Independent of
+both toggles.
+
+| Colour | Severity | Means |
+|---|---|---|
+| Grey | sub_blake | drive below Blake threshold — no cavitation |
+| Yellow | warning | off-resonance / linear regime / borderline |
+| Red | danger | far off-resonance / unstable / fragmenting |
+| Green | success | SBSL band — TEST will land stably |
+
+The classifier (`_classify_live`) is analytical — no forward
+simulation. Runs four checks in order:
+
+1. Sub-Blake (analytical threshold for current R₀, p_∞)
+2. Off-resonance vs the first 4 chamber modes (Q-attenuation)
+3. P_A/p_∞ → R_max/R₀ scaling (empirical fit to Lofstedt 1995 data)
+4. Regime decision from R_max/R₀ band
+
+So the chip is essentially a "preview the regime card without
+paying for a TEST". Use it to scrub through parameter space and
+find the green stripe.
+
+### Cross-references
+
+| What | Where |
+|---|---|
+| `initial_design()` heuristic | `cavplasma/suggestions/inverse_design.py` |
+| `refine_design()` grid search | same file |
+| `_classify_live` predictor | `cavplasma/ui/callbacks.py` |
+| `_adapt_partner_slider` Minnaert coupling | same file |
+| `DesignTarget` / `DesignConstraints` | `cavplasma.suggestions` (re-exported) |
 
 ---
 
