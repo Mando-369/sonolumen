@@ -1127,6 +1127,56 @@ def register_callbacks(app: Any) -> None:
         # if nothing has been loaded yet).
         return False, last_loaded
 
+    # ----------------------------------------------------------------------
+    # Live readouts for log-scale ambient sliders. p_∞ is stored as
+    # log₁₀(kPa); the readout shows the actual pressure in human units
+    # (Pa / kPa / MPa with seawater-depth equivalent). T_∞ readout
+    # adds a °C conversion next to the K reading.
+    # ----------------------------------------------------------------------
+    app.clientside_callback(
+        """
+        function(value) {
+            if (value === null || value === undefined) return '';
+            const T_C = (value - 273.15);
+            return value.toFixed(0) + ' K   ≡   ' + T_C.toFixed(1) + ' °C';
+        }
+        """,
+        Output("ambient_T_readout", "children"),
+        Input("ambient_T", "value"),
+    )
+
+    app.clientside_callback(
+        """
+        function(value) {
+            if (value === null || value === undefined) return '';
+            const p_kPa = Math.pow(10, value);
+            const p_Pa = p_kPa * 1000.0;
+            const p_atm = p_kPa / 101.325;
+            // Hydrostatic equivalent depth in seawater (1025 kg/m³, 9.81 m/s²)
+            const depth_m = Math.max(0, (p_Pa - 101325) / (1025 * 9.81));
+            // Choose a readable unit
+            let p_str;
+            if (p_kPa < 1) {
+                p_str = (p_kPa * 1000).toFixed(1) + ' Pa';
+            } else if (p_kPa < 1000) {
+                p_str = p_kPa.toFixed(1) + ' kPa';
+            } else if (p_kPa < 1e6) {
+                p_str = (p_kPa / 1000).toFixed(2) + ' MPa';
+            } else {
+                p_str = (p_kPa / 1e6).toFixed(2) + ' GPa';
+            }
+            let extra = ' (' + p_atm.toFixed(2) + ' atm';
+            if (depth_m >= 1) {
+                extra += ', ≈ ' + depth_m.toFixed(0) + ' m seawater';
+            }
+            extra += ')';
+            return p_str + extra;
+        }
+        """,
+        Output("ambient_p_readout", "children"),
+        Input("ambient_p", "value"),
+    )
+
     # Disable chamber_radius and chamber_Q sliders when the chosen
     # geometry doesn't actually use them (open-bath / HIFU / pistol_jet).
     # Avoids the user wondering why their changes have no effect.
