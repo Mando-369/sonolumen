@@ -51,14 +51,22 @@ up the drive to see when the boost wins.
 
 ## Series 4 — Hot SBSL recipes
 
-| File | Liquid | Gas | Drive | T_peak | Notes |
-|---|---|---|---|---|---|
-| `00015_suslick_h2so4_ar_sbsl.json` | 98 % H₂SO₄ | Ar | 28.6 kHz / 1.5 atm | 16 kK | **CORROSIVE** |
-| `00016_glycerin_viscous_demo.json` | pure glycerin | Ar | 38 kHz / 3 atm | 296 K | viscous-dominated DEMO |
+| File | Liquid | Wall | Gas | R₀ | Drive | Regime | T_peak | Photons |
+|---|---|---|---|---|---|---|---|---|
+| `00015_suslick_h2so4_ar_sbsl.json` | 98 % H₂SO₄ | Pyrex | Ar | 4.5 µm | 28.6 kHz / 1.5 atm | stable_spherical | 16 kK | 2.0e6 |
+| `00023_stable.json` | 98 % H₂SO₄ | **Ti-6Al-4V** | Ar | **8 µm** | 28.6 kHz / 1.5 atm | **stable_spherical** | **15 kK** | **7.0e6** |
+| `00016_glycerin_viscous_demo.json` | pure glycerin | Pyrex | Ar | 4.5 µm | 38 kHz / 3 atm | linear_oscillation | 296 K | — |
 
-The Suslick preset uses concentrated sulfuric acid (low vapor
-pressure → no quenching). T_peak comes in at 16 kK rather than the
-literature 30 kK because we're using mode n=2 not the actual
+**`00023_stable.json` is a cleaner Suslick variant** — same liquid
+(H₂SO₄) and drive frequency (28.6 kHz mode n=2) as 00015, but with
+R₀ bumped from 4.5 µm → 8 µm and the chamber wall switched to
+Ti-6Al-4V (better fatigue resistance for hot SBSL). Drive/Minnaert
+ratio = 0.090 — textbook SBSL inertial regime. ~3.5× more photons
+than 00015 due to the larger R₀.
+
+The Suslick presets use concentrated sulfuric acid (low vapor
+pressure → no quenching). T_peak comes in at 15–16 kK rather than
+the literature 30 kK because we're using mode n=2 not the actual
 transducer-coupled chamber mode; tune drive_f and try.
 
 The glycerin preset is intentionally a *demonstration* of the
