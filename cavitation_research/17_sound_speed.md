@@ -3,7 +3,7 @@
 A companion to §16 (pressure regimes). Higher static pressure makes
 water stiffer faster than it makes it denser, so the speed of sound
 goes up with depth. This note records the standard formulas, fact-
-checks a few common claims, and (importantly) flags how cavplasma's
+checks a few common claims, and (importantly) flags how sonolumen's
 Tait-EOS sound-speed model already responds to depth and where the
 modelling gap is.
 
@@ -93,7 +93,7 @@ can travel **thousands of km** along it (whales, antisubmarine
 listening, the 1991 Heard Island feasibility test that picked up a
 57 Hz tone in Bermuda).
 
-For cavplasma this is a chamber-design consideration only if you
+For sonolumen this is a chamber-design consideration only if you
 ever model very large open-water configurations — irrelevant for
 SBSL or pistol-shrimp scales.
 
@@ -114,9 +114,9 @@ acoustic story changes:
 > Brillouin scattering puts Ice VII at 4500–5500 m/s near the
 > transition and >7000 m/s by ~30 GPa.
 
-## 5. How this maps onto cavplasma
+## 5. How this maps onto sonolumen
 
-cavplasma uses a Tait equation of state for the liquid
+sonolumen uses a Tait equation of state for the liquid
 (`bubble_dynamics.py:tait_enthalpy`, `tait_sound_speed`):
 
 ```

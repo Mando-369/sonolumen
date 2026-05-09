@@ -11,7 +11,7 @@ import time
 
 import numpy as np
 
-from cavplasma import presets, sweep
+from sonolumen import presets, sweep
 
 
 def main() -> None:

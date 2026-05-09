@@ -1,6 +1,6 @@
 # Section 12 — Scenario simulator architecture (v2)
 
-> Purpose: define the `Scenario` abstraction that wraps cavplasma's
+> Purpose: define the `Scenario` abstraction that wraps sonolumen's
 > existing physics core into a one-press "virtual experiment." A
 > Scenario bundles everything that is fixed about a test (chamber,
 > transducers, liquid, walls) plus everything that varies (bubble

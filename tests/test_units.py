@@ -1,4 +1,4 @@
-"""SI dimensional smoke tests for cavplasma helpers.
+"""SI dimensional smoke tests for sonolumen helpers.
 
 Phase A: every public function in liquids/seed/bubble_dynamics is
 called with SI inputs and the output is checked for finiteness and
@@ -11,22 +11,22 @@ import math
 
 import numpy as np
 
-from cavplasma.bubble_dynamics import (
+from sonolumen.bubble_dynamics import (
     gas_pressure,
     hardcore_radius,
     minnaert_frequency,
     rayleigh_collapse_time,
 )
-from cavplasma.config import (
+from sonolumen.config import (
     AcousticDrive,
     AmbientConditions,
     BubbleSeed,
     PhysicsOptions,
 )
-from cavplasma.drive import make_dp_a_dt, make_p_a
-from cavplasma.liquids import preset
-from cavplasma.reactor import Reactor, fundamental_frequency
-from cavplasma.seed import (
+from sonolumen.drive import make_dp_a_dt, make_p_a
+from sonolumen.liquids import preset
+from sonolumen.reactor import Reactor, fundamental_frequency
+from sonolumen.seed import (
     blake_threshold,
     equilibrium_gas_pressure,
     is_blake_supercritical,

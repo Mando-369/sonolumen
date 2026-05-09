@@ -1,4 +1,4 @@
-"""Test fixtures for cavplasma. Phase A canonical configs."""
+"""Test fixtures for sonolumen. Phase A canonical configs."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import math
 
 import pytest
 
-from cavplasma.config import (
+from sonolumen.config import (
     AcousticDrive,
     AmbientConditions,
     BubbleSeed,
@@ -15,7 +15,7 @@ from cavplasma.config import (
     PhysicsOptions,
     SimulationConfig,
 )
-from cavplasma.liquids import preset as liquid_preset
+from sonolumen.liquids import preset as liquid_preset
 
 
 @pytest.fixture

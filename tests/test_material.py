@@ -15,7 +15,7 @@ from __future__ import annotations
 import dataclasses
 import pytest
 
-from cavplasma.material import (
+from sonolumen.material import (
     materials,
     microjet_velocity,
     microjet_velocity_water,
@@ -26,8 +26,8 @@ from cavplasma.material import (
     single_event_pit_volume,
     waterhammer_pressure,
 )
-from cavplasma.material.wall_loads import WallLoadHistory
-from cavplasma.scenario import presets
+from sonolumen.material.wall_loads import WallLoadHistory
+from sonolumen.scenario import presets
 
 
 # ---------------------------------------------------------------------------

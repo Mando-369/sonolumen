@@ -1,6 +1,6 @@
 # How to run a test — step by step
 
-This is the workflow walk-through for the cavplasma UI: launch → set up
+This is the workflow walk-through for the sonolumen UI: launch → set up
 a test → read the data → save it → recall it → repeat. Plus a few
 gotchas the dossier (`cavitation_research/`) doesn't cover but that
 matter when you're at the keyboard.
@@ -12,12 +12,12 @@ matter when you're at the keyboard.
 One-off:
 
 ```bash
-cd "Acoustic Plasma Reactor"
+cd sonolumen
 python3 -m venv .venv
 .venv/bin/pip install -e '.[ui]'
 ```
 
-That installs cavplasma in editable mode plus the UI extras (Dash,
+That installs sonolumen in editable mode plus the UI extras (Dash,
 Plotly, dash-bootstrap-components, waitress).
 
 ---
@@ -31,7 +31,7 @@ Plotly, dash-bootstrap-components, waitress).
 You should see only:
 
 ```
-  cavplasma UI
+  sonolumen UI
   http://127.0.0.1:8050
   Ctrl-C to stop
 ```
@@ -180,12 +180,12 @@ regime, T_peak, photons, R_max, Mach. The buffer keeps the most recent
 ## 6. Save the test as a preset
 
 The UI doesn't write Python preset files (those live in
-`cavplasma/scenario/presets.py` and ship with the package). Instead it
+`sonolumen/scenario/presets.py` and ship with the package). Instead it
 saves your *current Scenario* as a JSON file you can recall later.
 
 1. Configure the controls until you have the test you want.
 2. Click **Save JSON** in the lower-left of the controls.
-3. Your browser downloads `cavplasma_scenario.json`. **Rename it
+3. Your browser downloads `sonolumen_scenario.json`. **Rename it
    immediately** to something memorable, e.g.
    `xenon_argon_30kHz_3atm.json`, and put it in a folder you'll find
    again.
@@ -193,7 +193,7 @@ saves your *current Scenario* as a JSON file you can recall later.
 The JSON is byte-identical-round-trippable (§12.10 #6) — so loading
 the same file back always reconstructs the exact same Scenario.
 
-> **Note** — `.gitignore` excludes `cavplasma_scenario.json` and
+> **Note** — `.gitignore` excludes `sonolumen_scenario.json` and
 > `*.local.json` so you don't accidentally commit your saved tests.
 > If you want to version-control a saved preset, rename it to
 > something like `presets/my_xenon_test.json` and add it explicitly.
@@ -208,7 +208,7 @@ the same file back always reconstructs the exact same Scenario.
 4. Click **TEST ▶** to re-run.
 
 The Load button validates the JSON first; if it's malformed (or from
-an incompatible cavplasma version), nothing changes and an error is
+an incompatible sonolumen version), nothing changes and an error is
 silently swallowed. Open the developer console in your browser to see
 the parse error.
 
@@ -238,7 +238,7 @@ For sweeps and batch jobs the UI is the wrong tool. Use the Python
 API directly:
 
 ```python
-from cavplasma.scenario import presets
+from sonolumen.scenario import presets
 
 s = presets.sbsl_canonical()
 result = s.run()
@@ -252,7 +252,7 @@ Sweep over P_A:
 
 ```python
 import dataclasses, numpy as np
-from cavplasma.scenario import presets
+from sonolumen.scenario import presets
 
 base = presets.sbsl_canonical()
 for P in np.linspace(1.0e5, 1.6e5, 11):
@@ -267,7 +267,7 @@ for P in np.linspace(1.0e5, 1.6e5, 11):
 `§14`'s next-experiment finite-difference suggestor (CLI-only at v2):
 
 ```python
-from cavplasma.suggestions import suggest_next_experiment
+from sonolumen.suggestions import suggest_next_experiment
 
 s = presets.sbsl_canonical()
 r = s.run()
@@ -276,7 +276,7 @@ print(nx.message, nx.suggested_change)
 ```
 
 `§13` direct calls (catalog lookups, microjet velocity, transducer
-lifetime) — see `cavplasma/material/__init__.py` for the API.
+lifetime) — see `sonolumen/material/__init__.py` for the API.
 
 ---
 
@@ -290,7 +290,7 @@ lifetime) — see `cavplasma/material/__init__.py` for the API.
 | Slider snaps to round numbers; can't pick exactly 1.32 atm | Slider step size is 0.05. | Type the exact value into the suggested-change dict in the suggestions panel, or edit + re-load the saved JSON. |
 | "Listen" button has no effect | Click TEST first. The audio is built from the result's hydrophone trace, which only exists after a run. | Run, then click Listen. |
 | `pytest` fails on PlasmaPy import | PlasmaPy is an optional cross-check (only `test_bremsstrahlung_emissivity` uses it). | Either `pip install plasmapy` or accept the 1 skipped test. |
-| Save JSON downloads but Load JSON does nothing | Most common: you tried to load a JSON saved from a *different* cavplasma version. | Re-save a fresh scenario from the current build. |
+| Save JSON downloads but Load JSON does nothing | Most common: you tried to load a JSON saved from a *different* sonolumen version. | Re-save a fresh scenario from the current build. |
 | Test runs forever | Convergence-test toggle is on plus a stiff scenario. | Untoggle convergence test for normal use; it doubles the run cost. |
 
 ---
@@ -324,7 +324,7 @@ never makes anything up — every recommendation is anchored.
 - **Save as preset (in-app)** — currently you save *scenarios* as
   JSON. To register one as a Python preset (so it shows in the
   dropdown alongside `sbsl_canonical`), copy your JSON into
-  `cavplasma/scenario/presets.py` as a new `def my_preset() -> Scenario`
+  `sonolumen/scenario/presets.py` as a new `def my_preset() -> Scenario`
   function. Future v2.next will add an in-UI "promote to preset"
   button that writes to a user-owned `presets_user.py`.
 - **Next-experiment button** — `suggest_next_experiment(...)` exists
@@ -347,6 +347,6 @@ never makes anything up — every recommendation is anchored.
 - **Reset all controls** — pick `sbsl_canonical` from the preset
   dropdown again; that overwrites every slider.
 - **Reset notebook** — click **Clear** at the bottom.
-- **Wipe everything** — `rm -rf .venv .pytest_cache cavplasma.egg-info`
+- **Wipe everything** — `rm -rf .venv .pytest_cache sonolumen.egg-info`
   then re-install per step 0. Won't touch your saved scenario JSON
   files unless you put them in those folders.

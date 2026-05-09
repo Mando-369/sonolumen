@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# start.sh — launch the cavplasma Dash UI on http://127.0.0.1:8050.
+# start.sh — launch the sonolumen Dash UI on http://127.0.0.1:8050.
 #
 # Usage:
 #   ./start.sh                  # production WSGI (waitress), auto-opens browser
@@ -8,7 +8,7 @@
 #   ./start.sh --host 0.0.0.0   # bind to all interfaces
 #   ./start.sh --no-browser     # skip the auto-open
 #
-# All other flags are forwarded to `python -m cavplasma.ui`.
+# All other flags are forwarded to `python -m sonolumen.ui`.
 
 set -euo pipefail
 
@@ -74,7 +74,7 @@ done
 URL="http://${HOST}:${PORT}"
 
 echo
-echo "  cavplasma UI"
+echo "  sonolumen UI"
 echo "  ${URL}"
 echo "  Ctrl-C to stop"
 echo
@@ -96,4 +96,4 @@ if [[ "$OPEN_BROWSER" == "1" ]] && command -v open >/dev/null 2>&1; then
     ) &
 fi
 
-exec .venv/bin/python -m cavplasma.ui ${ARGS[@]+"${ARGS[@]}"}
+exec .venv/bin/python -m sonolumen.ui ${ARGS[@]+"${ARGS[@]}"}

@@ -1,4 +1,4 @@
-# §20 — What does `P_A` mean in cavplasma?
+# §20 — What does `P_A` mean in sonolumen?
 
 This note answers a recurring user confusion: "I got a 'stable_spherical'
 hit but the off-resonance R6 warning is still firing — is the
@@ -6,7 +6,7 @@ simulation result real or not?"
 
 ## TL;DR
 
-cavplasma's `drive.P_A` is **the at-bubble pressure amplitude** (the
+sonolumen's `drive.P_A` is **the at-bubble pressure amplitude** (the
 pressure the bubble actually feels), not the transducer's output.
 The simulator assumes you have a transducer powerful enough to
 deliver `P_A` at the bubble *no matter the frequency*. So the
@@ -41,7 +41,7 @@ bubble feels at its position, after the chamber has done whatever
 it does. The user is responsible for engineering the transducer +
 chamber to deliver this.
 
-cavplasma uses interpretation **(B)**. This was a deliberate
+sonolumen uses interpretation **(B)**. This was a deliberate
 modelling choice — it lets users specify "I want the bubble to feel
 1.32 atm" without needing to know the transducer-chamber transfer
 function. The standing-wave-factor in `field.py` handles the spatial
@@ -96,7 +96,7 @@ The SBSL canonical preset (26.5 kHz drive, 5 cm sphere, fluid mode
 n=2 at 30.6 kHz) is technically off-resonance against the geometric
 n=2 by Δf = 4.1 kHz at Q=1000 → attenuation 267×. R6 fires for it
 too. In a real experiment this preset works because of the points
-above; in cavplasma's geometric model, R6 is technically correct
+above; in sonolumen's geometric model, R6 is technically correct
 about the mismatch and the user should know.
 
 ## When R6 is loud vs quiet
@@ -136,7 +136,7 @@ informational quantity so the user can check feasibility.
   geometric model misses. Defaults to `1.0` (use geometric model).
 * **Q14**: a "transducer-realistic" toggle in the UI that, when
   enabled, applies the Q-attenuation to `P_A` directly — converting
-  cavplasma to interpretation (A). Useful for designing real
+  sonolumen to interpretation (A). Useful for designing real
   experiments rather than exploring parameter space. Off by default.
 * **Q15**: if the user specifies `transducer.max_acoustic_power_W`
   and validate() detects an off-resonance drive, also compute the

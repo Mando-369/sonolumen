@@ -1,7 +1,7 @@
 """§12.10 acceptance tests for the v2 Scenario layer.
 
 Six acceptance criteria from `cavitation_research/12_scenario_simulator.md`
-plus a regression check (Scenario.run() must match v1 cavplasma.run() to
+plus a regression check (Scenario.run() must match v1 sonolumen.run() to
 floating-point tolerance on the canonical SBSL case) plus a lint test
 (no §10 contested numbers hardcoded in the Scenario module).
 
@@ -21,8 +21,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-import cavplasma
-from cavplasma.scenario import (
+import sonolumen
+from sonolumen.scenario import (
     BubblePopulation,
     Chamber,
     DriveSchedule,
@@ -34,7 +34,7 @@ from cavplasma.scenario import (
     presets,
     observers,
 )
-from cavplasma.scenario.observers import (
+from sonolumen.scenario.observers import (
     HydrophoneObserver,
     PMTObserver,
     PickupCoilObserver,
@@ -277,7 +277,7 @@ def test_to_json_round_trip_byte_identical(preset_name):
 
 
 # ---------------------------------------------------------------------------
-# Regression — Scenario.run() matches v1 cavplasma.run() on canonical case
+# Regression — Scenario.run() matches v1 sonolumen.run() on canonical case
 # ---------------------------------------------------------------------------
 @pytest.mark.timeout(30)
 def test_scenario_run_matches_v1_run():
@@ -286,8 +286,8 @@ def test_scenario_run_matches_v1_run():
     canonical case (modulo summary float roundoff)."""
     s = presets.sbsl_canonical()
     v2_result = s.run()
-    v1_cfg = cavplasma.presets.sbsl_canonical()
-    v1_result = cavplasma.run(v1_cfg)
+    v1_cfg = sonolumen.presets.sbsl_canonical()
+    v1_result = sonolumen.run(v1_cfg)
     s_v1 = v1_result.summary
     s_v2 = v2_result.summary
     # The v2 summary is built from the same v1 summary dict — exact match.
@@ -299,17 +299,17 @@ def test_scenario_run_matches_v1_run():
 
 
 # ---------------------------------------------------------------------------
-# Lint — no §10 contested numbers hardcoded in cavplasma/scenario/
+# Lint — no §10 contested numbers hardcoded in sonolumen/scenario/
 # ---------------------------------------------------------------------------
 def test_no_hardcoded_outputs_in_scenario():
     """Mirror of the v1 §10 policy: §10 contested numbers (T_peak,
     n_e_peak, photon counts) must be diagnosed outputs, never *module-
-    level* literals. AST-walks every .py file in `cavplasma/scenario/`
+    level* literals. AST-walks every .py file in `sonolumen/scenario/`
     and rejects module-level assignments to those names whose right-hand
     side is a numeric literal in the §10 contested ranges. Function-
     local reads of `summary["T_peak"]` are fine — those are *diagnosed*."""
     forbidden_names = {"T_peak", "n_e_peak", "photons_visible_constant"}
-    pkg_root = Path(cavplasma.__file__).parent / "scenario"
+    pkg_root = Path(sonolumen.__file__).parent / "scenario"
     bad: list[str] = []
     for path in pkg_root.glob("*.py"):
         src = path.read_text()
@@ -326,7 +326,7 @@ def test_no_hardcoded_outputs_in_scenario():
                         bad.append(f"{path.name}:{node.lineno} assigns {name}")
     assert not bad, (
         "Found hardcoded §10 contested outputs at module level in "
-        "cavplasma/scenario/:\n" + "\n".join(bad)
+        "sonolumen/scenario/:\n" + "\n".join(bad)
     )
 
 

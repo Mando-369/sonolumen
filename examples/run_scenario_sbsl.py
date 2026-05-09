@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from cavplasma.scenario import Scenario, presets
+from sonolumen.scenario import Scenario, presets
 
 
 def main() -> None:
@@ -107,7 +107,7 @@ def _line_count_under(fn, limit: int) -> bool:
 
 def _validate_covers_seven_categories() -> bool:
     import dataclasses
-    from cavplasma.scenario.observers import PMTObserver
+    from sonolumen.scenario.observers import PMTObserver
     base = presets.sbsl_canonical()
     cats: set = set()
     cats.update(w.category for w in base.validate())

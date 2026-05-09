@@ -12,8 +12,8 @@ import math
 
 import pytest
 
-from cavplasma.config import AmbientConditions
-from cavplasma.liquids import (
+from sonolumen.config import AmbientConditions
+from sonolumen.liquids import (
     absolute_sound_speed,
     corrected_sound_speed_for,
     liquid_with_corrections,
@@ -115,7 +115,7 @@ def test_sbsl_canonical_compose_keeps_water_c_at_catalog():
     """The whole point of the delta-from-calibration scheme: SBSL
     canonical (water, 20 °C, 1 atm) must hand the v1 runner exactly
     the catalog `c`, so the v1↔v2 regression test stays green."""
-    from cavplasma.scenario import presets as scenario_presets
+    from sonolumen.scenario import presets as scenario_presets
     s = scenario_presets.sbsl_canonical()
     cfg = s._compose_simulation_config()
     assert cfg.liquid.c == preset("water").c, (
@@ -129,7 +129,7 @@ def test_sbsl_canonical_compose_keeps_water_c_at_catalog():
 # ---------------------------------------------------------------------------
 def test_compose_corrects_c_when_user_moves_temperature():
     """Set T_inf = 60 °C and confirm the composed config has higher c."""
-    from cavplasma.scenario import presets as scenario_presets
+    from sonolumen.scenario import presets as scenario_presets
     import dataclasses
     s = scenario_presets.sbsl_canonical()
     s_hot = dataclasses.replace(
@@ -146,7 +146,7 @@ def test_compose_corrects_c_when_user_moves_temperature():
 
 def test_compose_corrects_c_when_user_moves_pressure():
     """Set p_inf = 100 MPa (1 km depth) and confirm c rises."""
-    from cavplasma.scenario import presets as scenario_presets
+    from sonolumen.scenario import presets as scenario_presets
     import dataclasses
     s = scenario_presets.sbsl_canonical()
     s_deep = dataclasses.replace(
