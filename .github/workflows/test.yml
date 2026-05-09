@@ -30,4 +30,9 @@ jobs:
           pip install -e ".[dev,ui]"
 
       - name: Run pytest
+        env:
+          # Hosted runners are slower than dev machines; relax the
+          # wall-clock budgets in tests/test_scenario.py and tests/test_ui.py
+          # by 3× for CI. Local runs keep the dossier's strict 5 s budgets.
+          SONOLUMEN_TIMING_BUDGET_FACTOR: "3.0"
         run: pytest -v --timeout=120

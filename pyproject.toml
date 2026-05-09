@@ -31,11 +31,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
 ]
 
-[project.urls]
-Homepage = "https://github.com/Mando-369/sonolumen"
-Repository = "https://github.com/Mando-369/sonolumen"
-Issues = "https://github.com/Mando-369/sonolumen/issues"
-Changelog = "https://github.com/Mando-369/sonolumen/blob/main/CHANGELOG.md"
 dependencies = [
     "numpy>=1.26",
     "scipy>=1.11",
@@ -58,6 +53,12 @@ dev = [
     "pytest>=7.4",
     "pytest-timeout>=2.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Mando-369/sonolumen"
+Repository = "https://github.com/Mando-369/sonolumen"
+Issues = "https://github.com/Mando-369/sonolumen/issues"
+Changelog = "https://github.com/Mando-369/sonolumen/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["sonolumen*"]
