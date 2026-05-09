@@ -18,9 +18,12 @@ code path the @callback decorators wrap.
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
+
+TIMING_BUDGET_FACTOR = float(os.environ.get("SONOLUMEN_TIMING_BUDGET_FACTOR", "1.0"))
 
 # Skip the whole suite if Dash isn't installed (optional `[ui]` extra)
 pytest.importorskip("dash")
@@ -112,7 +115,11 @@ def test_test_button_under_5s_all_panels_populated():
     result_payload, status = run_test(payload)
     elapsed = time.time() - t0
     assert result_payload is not None, f"run failed: {status}"
-    assert elapsed < 5.0, f"run took {elapsed:.2f} s > 5 s"
+    budget = 5.0 * TIMING_BUDGET_FACTOR
+    assert elapsed < budget, (
+        f"run took {elapsed:.2f} s > {budget:.1f} s "
+        f"(§15.11 #3 budget = 5 s × factor {TIMING_BUDGET_FACTOR})"
+    )
 
     # All six centre-column figure ids should be present
     figs = render_figures(payload, result_payload)

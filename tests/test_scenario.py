@@ -14,9 +14,12 @@ from __future__ import annotations
 import ast
 import dataclasses
 import inspect
+import os
 import re
 import time
 from pathlib import Path
+
+TIMING_BUDGET_FACTOR = float(os.environ.get("SONOLUMEN_TIMING_BUDGET_FACTOR", "1.0"))
 
 import pandas as pd
 import pytest
@@ -89,9 +92,11 @@ def test_sbsl_canonical_run_under_5s_and_in_band():
     elapsed = time.time() - t0
 
     summary = result.summary
-    assert elapsed < 5.0, (
-        f"sbsl_canonical().run() took {elapsed:.2f} s > 5 s "
-        f"(§12.10 #2 budget). T_peak={summary.T_peak_K:.0f} K, "
+    budget = 5.0 * TIMING_BUDGET_FACTOR
+    assert elapsed < budget, (
+        f"sbsl_canonical().run() took {elapsed:.2f} s > {budget:.1f} s "
+        f"(§12.10 #2 budget = 5 s × factor {TIMING_BUDGET_FACTOR}). "
+        f"T_peak={summary.T_peak_K:.0f} K, "
         f"photons_4pi={summary.photons_visible_4pi:.2e}"
     )
     assert 30e-6 <= summary.R_max <= 50e-6, (
