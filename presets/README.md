@@ -3,7 +3,7 @@
 Ready-to-load JSON scenarios. Open the UI (`./start.sh`), click
 **Load JSON**, and pick one of these. Or look at any one in this
 folder as a template for your own scenarios — the JSON format is
-documented in `cavplasma/scenario/io.py` (§12.9 of the dossier).
+documented in `sonolumen/scenario/io.py` (§12.9 of the dossier).
 
 The status line under the Save / Load buttons will show the
 loaded file name + `scenario.name` from the metadata.
@@ -102,15 +102,15 @@ calibrating where the band edges live in your chamber + liquid.
 
 | File | Origin |
 |---|---|
-| `cavplasma_scenario_00001.json` | user's first "stable" hit (later flagged as off-resonance trap; produced `linear_oscillation`) |
-| `cavplasma_scenario_00002-stable.json` | user's 10 kHz / 2 atm config (stable_spherical in model, but requires 1400 atm transducer per §20) |
-| `cavplasma_scenario_00002_stable_sbsl_n4.json` | grid-searched real SBSL hit at chamber mode n=4 (61.2 kHz, 2 atm) — works in a real chamber |
-| `cavplasma_scenario-stable_spherical Stable single-bubble dynamics-SBSL band.json` | user's earliest exploration |
+| `sonolumen_scenario_00001.json` | user's first "stable" hit (later flagged as off-resonance trap; produced `linear_oscillation`) |
+| `sonolumen_scenario_00002-stable.json` | user's 10 kHz / 2 atm config (stable_spherical in model, but requires 1400 atm transducer per §20) |
+| `sonolumen_scenario_00002_stable_sbsl_n4.json` | grid-searched real SBSL hit at chamber mode n=4 (61.2 kHz, 2 atm) — works in a real chamber |
+| `sonolumen_scenario-stable_spherical Stable single-bubble dynamics-SBSL band.json` | user's earliest exploration |
 
 ## How to add your own preset
 
 1. Configure the UI to your liking (every panel)
-2. Click **Save JSON** — downloads `cavplasma_scenario.json`
+2. Click **Save JSON** — downloads `sonolumen_scenario.json`
 3. Rename it descriptively and drop it in this folder
 4. Add a row to this README with what it tests
 

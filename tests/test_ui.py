@@ -12,7 +12,7 @@ Eight criteria from `cavitation_research/15_visualization_ui.md`:
   8. Notebook panel logs the last 20 runs and supports reload
 
 These tests do *not* spin up a Dash server. They invoke the pure
-functions registered in `cavplasma.ui.callbacks`, which is the same
+functions registered in `sonolumen.ui.callbacks`, which is the same
 code path the @callback decorators wrap.
 """
 
@@ -25,9 +25,9 @@ import pytest
 # Skip the whole suite if Dash isn't installed (optional `[ui]` extra)
 pytest.importorskip("dash")
 
-from cavplasma.scenario import Scenario, presets as scenario_presets
-from cavplasma.ui import create_app
-from cavplasma.ui.callbacks import (
+from sonolumen.scenario import Scenario, presets as scenario_presets
+from sonolumen.ui import create_app
+from sonolumen.ui.callbacks import (
     animation_frame_figure,
     append_notebook,
     apply_controls,
@@ -44,7 +44,7 @@ from cavplasma.ui.callbacks import (
     render_suggestions,
     run_test,
 )
-from cavplasma.ui.state import scenario_from_store
+from sonolumen.ui.state import scenario_from_store
 
 
 # ---------------------------------------------------------------------------

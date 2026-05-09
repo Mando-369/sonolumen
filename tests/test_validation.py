@@ -15,22 +15,22 @@ import math
 import numpy as np
 import pytest
 
-from cavplasma._constants import K_B, SIGMA_SB
+from sonolumen._constants import K_B, SIGMA_SB
 
-from cavplasma.bubble_dynamics import (
+from sonolumen.bubble_dynamics import (
     gas_pressure,
     minnaert_frequency,
     rayleigh_collapse_time,
 )
-from cavplasma.config import (
+from sonolumen.config import (
     AcousticDrive,
     AmbientConditions,
     BubbleSeed,
     NumericsOptions,
     PhysicsOptions,
 )
-from cavplasma.seed import blake_threshold, equilibrium_gas_pressure
-from cavplasma.solvers import integrate_bubble
+from sonolumen.seed import blake_threshold, equilibrium_gas_pressure
+from sonolumen.solvers import integrate_bubble
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +327,7 @@ def test_blackbody_integrated_power():
     Stefan–Boltzmann emissive power per unit area, σ_SB T⁴, at T = 2 × 10⁴ K
     is 9.07 × 10⁹ W/m² (per §11.5 sanity rule).
     """
-    from cavplasma.em_emission import stefan_boltzmann_power
+    from sonolumen.em_emission import stefan_boltzmann_power
 
     T = 2e4
     # Per unit area: σ T⁴
@@ -352,7 +352,7 @@ def test_bremsstrahlung_emissivity():
     10⁻¹ to 10⁰ W m⁻³ Hz⁻¹ sr⁻¹. PlasmaPy comparison is wired but
     skipped if the optional dep is not installed.
     """
-    from cavplasma.em_emission import (
+    from sonolumen.em_emission import (
         bremsstrahlung_emissivity, bremsstrahlung_total_cooling,
     )
 
@@ -381,7 +381,7 @@ def test_bremsstrahlung_emissivity():
         # versions; do an order-of-magnitude check rather than exact match.
         j_pp = thermal_bremsstrahlung(nu_q, T_q, n_e_q).to_value("W m-3 Hz-1 sr-1")
         assert abs(math.log10(j_pp) - math.log10(j)) < 1.0, (
-            f"PlasmaPy gives {j_pp:.2e}, cavplasma gives {j:.2e} W/m³/Hz/sr"
+            f"PlasmaPy gives {j_pp:.2e}, sonolumen gives {j:.2e} W/m³/Hz/sr"
         )
     except (ImportError, AttributeError):
         # PlasmaPy API/version mismatch — skip cleanly.
@@ -401,15 +401,15 @@ def test_sbsl_canonical_full(water_at_20C, ambient_lab):
 
     Photon yield: §9.9 quotes 10⁵–10⁷ visible photons per flash, almost
     certainly the *as-detected* count after geometric collection × QE.
-    Cavplasma reports the *as-emitted* count, which is 10²–10³ × higher
+    Sonolumen reports the *as-emitted* count, which is 10²–10³ × higher
     (full 4π emission, no detector efficiency). We use a band that
     encompasses the §9.9 lower bound and accommodates emission-vs-
     detection through to two orders of magnitude above the upper bound.
     """
-    from cavplasma._constants import K_B as KB
-    from cavplasma.bubble_dynamics import total_gas_molecules
-    from cavplasma.em_emission import emit_spectrum, photon_yield
-    from cavplasma.plasma import saha_trace
+    from sonolumen._constants import K_B as KB
+    from sonolumen.bubble_dynamics import total_gas_molecules
+    from sonolumen.em_emission import emit_spectrum, photon_yield
+    from sonolumen.plasma import saha_trace
 
     seed = BubbleSeed(
         R0=4.5e-6, T0=293.15,
@@ -477,7 +477,7 @@ def test_pistol_shrimp():
     flags this as weakly constrained), photons in [10⁴, 10⁵] (interpreted
     as detected; emission can be ~10²–10³× higher).
     """
-    from cavplasma import presets, run
+    from sonolumen import presets, run
 
     cfg = presets.pistol_shrimp()
     result = run(cfg)
@@ -510,7 +510,7 @@ def test_convergence():
     """§11.5 / §11.9-#5 — halving rtol/atol changes T_peak by < 5 % on the
     canonical SBSL case."""
     from dataclasses import replace
-    from cavplasma import presets, run
+    from sonolumen import presets, run
 
     cfg = presets.sbsl_canonical()
     # Use polytropic thermal here (cheaper) and only 4 cycles to keep test fast

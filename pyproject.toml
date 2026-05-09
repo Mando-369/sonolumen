@@ -3,15 +3,39 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cavplasma"
+name = "sonolumen"
 version = "0.1.0.dev0"
-description = "Single-bubble cavitation plasma simulator (v1) — implementation of cavitation_research/11_simulator_spec.md"
+description = "Single-bubble sonoluminescence and cavitation plasma simulator — implementation of cavitation_research/11_simulator_spec.md"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
-    { name = "Acoustic Plasma Reactor project" },
+    { name = "Thomas Mandolini" },
 ]
+keywords = [
+    "sonoluminescence",
+    "cavitation",
+    "plasma",
+    "physics",
+    "simulation",
+    "bubble-dynamics",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.urls]
+Homepage = "https://github.com/Mando-369/sonolumen"
+Repository = "https://github.com/Mando-369/sonolumen"
+Issues = "https://github.com/Mando-369/sonolumen/issues"
+Changelog = "https://github.com/Mando-369/sonolumen/blob/main/CHANGELOG.md"
 dependencies = [
     "numpy>=1.26",
     "scipy>=1.11",
@@ -36,7 +60,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["cavplasma*"]
+include = ["sonolumen*"]
 exclude = ["tests*", "examples*", "cavitation_research*"]
 
 [tool.pytest.ini_options]

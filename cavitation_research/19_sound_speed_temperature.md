@@ -111,7 +111,7 @@ reactor where you can't easily build 1 km of water column,
 temperature is the dominant control — and you'd hit the 74 °C
 maximum if you turned the heater up.
 
-## How this maps onto cavplasma
+## How this maps onto sonolumen
 
 Currently the simulator uses **scalar** `liquid.c = 1482 m/s` for
 fresh water, **independent of `T_inf`**.
@@ -151,7 +151,7 @@ For the ocean side, Mackenzie already gives `c(T, S, z)` — Q5/Q9 in
 * **Q12**: combined with Q4 (pressure) and Q9 (salinity), this
   becomes `c(T, S, p)` — three orthogonal corrections to the
   single scalar. The combined patch is ~30 lines; would close the
-  baseline-`c` modelling gap entirely across the cavplasma
+  baseline-`c` modelling gap entirely across the sonolumen
   parameter range.
 
 ## References

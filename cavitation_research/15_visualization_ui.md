@@ -322,7 +322,7 @@ result_store          →   visualization panel (read, render plots)
 ## 15.10  Module structure for the UI
 
 ```
-cavplasma/ui/
+sonolumen/ui/
 ├── __init__.py
 ├── app.py                # Dash app entry point
 ├── layout/
@@ -344,7 +344,7 @@ cavplasma/ui/
 Entry point:
 
 ```bash
-python -m cavplasma.ui            # → http://localhost:8050
+python -m sonolumen.ui            # → http://localhost:8050
 ```
 
 ---

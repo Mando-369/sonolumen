@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import time
 
-from cavplasma import presets, run
+from sonolumen import presets, run
 
 
 def main() -> None:

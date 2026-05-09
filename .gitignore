@@ -35,11 +35,11 @@ htmlcov/
 *.swp
 *~
 
-# cavplasma user data — local scenario / result exports written by the UI
-cavplasma_scenario.json
-cavplasma_notebook.csv
+# sonolumen user data — local scenario / result exports written by the UI
+sonolumen_scenario.json
+sonolumen_notebook.csv
 *.local.json
 
 # Logs
 *.log
-/tmp/cavplasma_ui.log
+/tmp/sonolumen_ui.log

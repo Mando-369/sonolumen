@@ -16,9 +16,9 @@ import dataclasses
 
 import pytest
 
-from cavplasma.scenario import Scenario, presets
-from cavplasma.scenario.observers import PMTObserver
-from cavplasma.suggestions import (
+from sonolumen.scenario import Scenario, presets
+from sonolumen.scenario.observers import PMTObserver
+from sonolumen.suggestions import (
     SuggestionsEngine,
     classify_regime,
     suggest_next_experiment,
@@ -56,7 +56,7 @@ def test_classifier_returns_rationale_audit_trail():
     """The rationale list must walk through every check in order, with
     the matched check marked FIRED and the rest PASS/SKIP. Lets the UI
     show 'why this regime?' under the regime card."""
-    from cavplasma.suggestions.regime import classify_with_rationale
+    from sonolumen.suggestions.regime import classify_with_rationale
     s = presets.sbsl_canonical()
     r = s.run()
     public, internal, rationale = classify_with_rationale(s, r)
@@ -81,9 +81,9 @@ def test_r6_off_resonance_scans_multiple_modes():
     aimed at the n=2 / n=3 radial mode. Verify the message now lists
     multiple modes and identifies the closest one."""
     import dataclasses
-    from cavplasma.config import AcousticDrive
-    from cavplasma.scenario.types import DriveSchedule
-    from cavplasma.scenario.scenario import _check_off_resonance
+    from sonolumen.config import AcousticDrive
+    from sonolumen.scenario.types import DriveSchedule
+    from sonolumen.scenario.scenario import _check_off_resonance
 
     s = presets.sbsl_canonical()
     drv = next(iter(s.drive.waveforms.values()))
@@ -109,7 +109,7 @@ def test_r6_off_resonance_scans_multiple_modes():
 def test_regime_strip_renders_one_tile_per_entry():
     """Notebook regime strip — one coloured tile per run, tooltipped
     with the entry's regime + headline numbers."""
-    from cavplasma.ui.callbacks import render_notebook_regime_strip
+    from sonolumen.ui.callbacks import render_notebook_regime_strip
     notebook = [
         {"regime": "sub_blake",        "T_peak_K": 300, "R_max_um": 5,
          "wall_mach": 0.001, "photons_4pi": 0},
@@ -125,7 +125,7 @@ def test_regime_strip_renders_one_tile_per_entry():
         f"expected 3 tiles, got {len(strip_div.children)}"
     )
     # Tile colours match REGIME_COLOR
-    from cavplasma.ui.style import REGIME_COLOR
+    from sonolumen.ui.style import REGIME_COLOR
     for tile, entry in zip(strip_div.children, notebook):
         expected = REGIME_COLOR.get(entry["regime"])
         actual = tile.style["backgroundColor"]
@@ -144,9 +144,9 @@ def test_classifier_linear_oscillation_off_resonance():
     (yellow) so the user knows the bubble isn't actually doing SBSL.
     """
     import dataclasses
-    from cavplasma.config import AcousticDrive
-    from cavplasma.scenario.types import DriveSchedule
-    from cavplasma.suggestions.regime import classify as classify_regime
+    from sonolumen.config import AcousticDrive
+    from sonolumen.scenario.types import DriveSchedule
+    from sonolumen.suggestions.regime import classify as classify_regime
 
     s = presets.sbsl_canonical()
     drv = next(iter(s.drive.waveforms.values()))

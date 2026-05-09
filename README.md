@@ -1,4 +1,4 @@
-# cavplasma — single-bubble cavitation plasma simulator (v1)
+# sonolumen — single-bubble cavitation plasma simulator (v1)
 
 Implementation of `cavitation_research/11_simulator_spec.md` (§11.1–§11.10).
 
@@ -18,7 +18,7 @@ python examples/run_pa_sweep.py            # §11.9 acceptance #4
 ## Programmatic API (§11.8)
 
 ```python
-from cavplasma import SimulationConfig, run, presets
+from sonolumen import SimulationConfig, run, presets
 
 cfg = presets.sbsl_canonical()
 result = run(cfg)
@@ -26,7 +26,7 @@ print(result.summary)
 
 # Parameter sweep
 import numpy as np
-from cavplasma import sweep
+from sonolumen import sweep
 results = sweep(cfg, drive__P_A=np.linspace(1.0e5, 1.6e5, 11))
 ```
 
@@ -56,7 +56,7 @@ documents the choice.
 
 ### `LiquidProperties` (§9.1)
 `name`, `rho`, `c`, `mu`, `sigma`, `p_v`, `B_tait`, `n_tait`,
-`beta_BoverA`, `alpha_dB_cm_MHz2`. Use `cavplasma.liquids.preset(name)`
+`beta_BoverA`, `alpha_dB_cm_MHz2`. Use `sonolumen.liquids.preset(name)`
 or pass explicit numbers.
 
 ### `AmbientConditions` (§9.2)
@@ -128,7 +128,7 @@ assigned from configuration. See §10 of the dossier for why.
 
 ## Dossier patches applied
 
-The dossier (`cavitation_research/`) was patched to align with cavplasma's
+The dossier (`cavitation_research/`) was patched to align with sonolumen's
 v1 implementation. See **§10.14 patch log** for the full list. Summary:
 
 - **§2.1 / E6 (RPE sign convention)** — additive form
@@ -164,15 +164,15 @@ Phase E refinements (not in v1):
 
 ## v2 — Scenario layer (§12)
 
-The `cavplasma.scenario` subpackage wraps the v1 physics core in a
+The `sonolumen.scenario` subpackage wraps the v1 physics core in a
 single declarative `Scenario` object: chamber + transducers + drive +
 bubble population + observers + walls. `scenario.run()` composes a v1
-`SimulationConfig`, calls `cavplasma.run()`, applies each observer,
+`SimulationConfig`, calls `sonolumen.run()`, applies each observer,
 and returns a `ScenarioResult` with per-observer DataFrames, summary
 diagnostics, and pre-flight warnings.
 
 ```python
-from cavplasma.scenario import Scenario, presets
+from sonolumen.scenario import Scenario, presets
 
 s = presets.sbsl_canonical()
 warnings = s.validate()       # §12.6 pre-flight checks
@@ -189,8 +189,8 @@ s2   = Scenario.from_json(text)
 
 | Preset | Section | Notes |
 |---|---|---|
-| `sbsl_canonical()` | §9.3 | Numerically identical to v1 `cavplasma.presets.sbsl_canonical()`; 26.5 kHz, 1.32 atm, 4.5 µm Ar bubble in a 100 mL Pyrex sphere with PMT + hydrophone + spectrometer. |
-| `pistol_shrimp_event()` | §9.8 | Numerically identical to v1 `cavplasma.presets.pistol_shrimp()`; impulsive 3.5 mm seawater bubble, no continuous drive. |
+| `sbsl_canonical()` | §9.3 | Numerically identical to v1 `sonolumen.presets.sbsl_canonical()`; 26.5 kHz, 1.32 atm, 4.5 µm Ar bubble in a 100 mL Pyrex sphere with PMT + hydrophone + spectrometer. |
+| `pistol_shrimp_event()` | §9.8 | Numerically identical to v1 `sonolumen.presets.pistol_shrimp()`; impulsive 3.5 mm seawater bubble, no continuous drive. |
 | `tabletop_starter()` | §6.3 / §9.10 | Recommended first-build: 20 kHz Langevin + 100 mL water cell. Body ≤ 10 lines per §12.10 #1. |
 
 ### §12.10 acceptance status
@@ -213,13 +213,13 @@ pytest -v tests/test_scenario.py             # the six §12.10 tests + regressio
 
 ## v2 — §13 material stress + erosion + lifetime
 
-`cavplasma.material` populates wall-load and erosion predictions on
+`sonolumen.material` populates wall-load and erosion predictions on
 every `Scenario.run()`. The §13.10 acceptance tests cover the full
 forward chain — microjet velocity, waterhammer pressure, single-event
 pit volume, severity factor → ASTM-anchored MDPR, transducer lifetime.
 
 ```python
-from cavplasma.scenario import presets
+from sonolumen.scenario import presets
 
 result = presets.sbsl_canonical().run()
 print(result.erosion.severity)           # § 13.5 severity factor
@@ -255,13 +255,13 @@ print(result.thermal_state.delta_T_steady_K)
 
 ## v2 — §14 suggestions engine
 
-`cavplasma.suggestions` runs after every `Scenario.run()` and populates
+`sonolumen.suggestions` runs after every `Scenario.run()` and populates
 `result.summary.regime` + `result.suggestions`. Seventeen rules (R1–R17)
 cover the §14.3 cases; seven caveats (C1–C7) surface §10 uncertainties
 relevant to the run.
 
 ```python
-from cavplasma.suggestions import (
+from sonolumen.suggestions import (
     SuggestionsEngine, classify_regime, suggest_next_experiment,
 )
 
@@ -290,7 +290,7 @@ nx = suggest_next_experiment(scenario, result, goal="maximize_T")
 
 ## v2 — §15 Plotly Dash UI
 
-`cavplasma.ui` is a single-page Dash app that drives the §12 Scenario
+`sonolumen.ui` is a single-page Dash app that drives the §12 Scenario
 layer with sliders and a TEST button. Three columns per §15.1:
 
 - **Controls** — accordion of Liquid / Ambient / Drive / Bubble /
@@ -309,14 +309,14 @@ Plus a bottom **Lab notebook** panel that logs the last 20 runs
 pip install -e ".[ui]"          # add Dash + Plotly + bootstrap-components + waitress
 ./start.sh                       # → http://127.0.0.1:8050 (auto-opens browser)
 # or directly:
-python -m cavplasma.ui           # production WSGI (waitress, no warnings)
-python -m cavplasma.ui --debug   # Dash dev server (auto-reload)
+python -m sonolumen.ui           # production WSGI (waitress, no warnings)
+python -m sonolumen.ui --debug   # Dash dev server (auto-reload)
 ```
 
 Programmatic entry:
 
 ```python
-from cavplasma.ui import create_app
+from sonolumen.ui import create_app
 app = create_app()
 app.run(port=8050, debug=True)
 ```
@@ -337,9 +337,9 @@ app.run(port=8050, debug=True)
 ### Architecture
 
 ```
-cavplasma/ui/
+sonolumen/ui/
 ├── app.py             # create_app() + run_server()
-├── __main__.py        # `python -m cavplasma.ui`
+├── __main__.py        # `python -m sonolumen.ui`
 ├── style.py           # colour scheme + animation constants
 ├── state.py           # Scenario / ScenarioResult ⇄ dcc.Store
 ├── figures.py         # Plotly figure factories (pure functions)

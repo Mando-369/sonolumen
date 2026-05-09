@@ -1,18 +1,18 @@
 # §16 — Pressure regimes: from waterjets to black holes
 
 A reference for sweeping `p_∞` across many orders of magnitude in
-`cavplasma`. Originally drafted to answer "what's the maximum pressure
+`sonolumen`. Originally drafted to answer "what's the maximum pressure
 inside a 1-meter sphere?" — useful framing for choosing the
-`p_∞` slider value (`cavplasma/ui/layout.py:_ambient_controls`,
+`p_∞` slider value (`sonolumen/ui/layout.py:_ambient_controls`,
 range 30 kPa → 100 MPa) and for understanding when the
 simulator's water EOS stops being valid.
 
 ## TL;DR
 
-| Regime | Pressure | What happens | cavplasma valid? |
+| Regime | Pressure | What happens | sonolumen valid? |
 |---|---|---|---|
 | Industrial waterjet | ~0.4 GPa (60 kpsi) | Steel cutting, abrasive blasting | ✓ |
-| **cavplasma slider max** | **0.1 GPa (14.5 kpsi)** | **Bottom of bathyal ocean (~10 km)** | ✓ |
+| **sonolumen slider max** | **0.1 GPa (14.5 kpsi)** | **Bottom of bathyal ocean (~10 km)** | ✓ |
 | Plastic collapse, maraging-steel sphere | 1.4–2.8 GPa | Sphere yields, "flows" | partial |
 | Ice VI threshold (room T) | ~1 GPa | Liquid → solid Ice VI | ✗ EOS limit |
 | Ice VII threshold (room T) | ~2.1 GPa | Solid hot ice | ✗ |
@@ -20,9 +20,9 @@ simulator's water EOS stops being valid.
 | Diamond-anvil cell record | 770 GPa | Superionic solid (O lattice + mobile H⁺) | ✗ |
 | 1-m sphere → black hole | ~3.4 × 10²⁶ kg | Schwarzschild radius reached | ✗ |
 
-The cavplasma slider stops at 0.1 GPa, an order of magnitude below
+The sonolumen slider stops at 0.1 GPa, an order of magnitude below
 where water stops being a fluid. That keeps the Tait EOS
-(`cavplasma/liquids.py`) valid across the full sweep range. Anything
+(`sonolumen/liquids.py`) valid across the full sweep range. Anything
 above 1 GPa needs a different liquid model — the simulator will run
 but the answers stop being physical.
 
@@ -65,7 +65,7 @@ toughness derating). Run them at the bare Tresca limit and the sphere
 yields; cycle them anywhere near it and they fail by fatigue cracking
 in <10⁴ cycles.
 
-For cavplasma, this matters when validating the chamber pick: §13's
+For sonolumen, this matters when validating the chamber pick: §13's
 wall-stress observer (`StressProbeObserver`) reports peak wall pressure
 during collapse; a borosilicate sphere maxes out around ~50 MPa
 (steady) and survives only if collapse spikes stay short. Once
@@ -84,7 +84,7 @@ experimental literature):
 
 | Phase | P (room T) | Notes |
 |---|---|---|
-| Liquid water | < 1 GPa | Tait EOS valid; cavplasma operates here |
+| Liquid water | < 1 GPa | Tait EOS valid; sonolumen operates here |
 | Ice VI | 0.6–2.2 GPa | Tetragonal, denser than liquid |
 | Ice VII | 2.1–60 GPa | Cubic, "hot ice" — solid at +100 °C |
 | Ice X | 60–~150 GPa | Symmetric O–H–O bonds (no longer molecular) |
@@ -93,7 +93,7 @@ experimental literature):
 The 1 GPa Ice VI / 2.1 GPa Ice VII / 70 GPa Ice X numbers are
 correct to about ±20 %. Above 1 GPa your "water pump" is a mechanical
 ram crushing solid crystal, not pumping liquid — none of the
-cavitation physics in `cavplasma/bubble_dynamics.py` applies, because
+cavitation physics in `sonolumen/bubble_dynamics.py` applies, because
 there's no longer a free surface for bubble dynamics to live on.
 
 > **Note on terminology:** the original write-up's summary table had
@@ -124,7 +124,7 @@ laser heating). Below that temperature you get Ice X — still solid,
 still molecular at the bond level, but with the proton sitting
 symmetrically between two oxygens.
 
-These pressures are 10⁴ × larger than anything cavplasma's water EOS
+These pressures are 10⁴ × larger than anything sonolumen's water EOS
 is calibrated for. The static ambient pressure inside the bubble at
 collapse can transiently spike into this regime (~GPa peak gas
 pressure in a strong SBSL collapse, by `bubble_dynamics.py` output),
@@ -165,14 +165,14 @@ before that point the matter degenerates through:
 2. Neutron degeneracy (neutron-star state) at ~10³⁴ Pa
 3. Schwarzschild collapse at the limit above
 
-None of which cavplasma will ever simulate. The relevant takeaway is
+None of which sonolumen will ever simulate. The relevant takeaway is
 just: **pressure has gravitating mass-energy** (T_μν in general
 relativity), so even a notional "infinite-strength" container has a
 finite limit set by GR.
 
 ---
 
-## How to use this in cavplasma
+## How to use this in sonolumen
 
 * **Slider range** (`p_∞` log scale, 30 kPa → 100 MPa) covers
   vacuum experiments through Mariana Trench depths, all in the
@@ -183,7 +183,7 @@ finite limit set by GR.
   diamond-anvil cell experiments.
 * **§13 wall-stress observer** uses the wall pressure during collapse
   to compute fatigue lifetime; the chamber materials catalogued in
-  `cavplasma/material/materials.py` all have `sigma_UTS` ≤ 2 GPa, so
+  `sonolumen/material/materials.py` all have `sigma_UTS` ≤ 2 GPa, so
   any peak transient above ~1 GPa instantly fails the chamber
   regardless of cycle count.
 * **Pattern-finding sweeps** (the user's question that started this

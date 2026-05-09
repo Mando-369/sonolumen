@@ -210,7 +210,7 @@ expected band.
 
 ## 10.14  Patch log — dossier inconsistencies surfaced during implementation
 
-The following items were caught while building cavplasma v1 against this
+The following items were caught while building sonolumen v1 against this
 dossier and have been patched in place. Recorded here so future readers
 know what changed and why.
 
@@ -225,7 +225,7 @@ know what changed and why.
   both standardised on the additive convention. Sign-convention note
   added to §2.1 and equations.md.
 - **Photon yield convention.** §9.9's [10⁵, 10⁷] band was the SBSL
-  literature's *detected* count; cavplasma reports 4π emitted photons.
+  literature's *detected* count; sonolumen reports 4π emitted photons.
   Patched: §9.9 now distinguishes the two and the §11.5 test uses a
   wider [10³, 10¹⁰] band on emitted photons.
 - **Vapour-cap species scope.** §4.3's table covered N₂/O₂/H₂O

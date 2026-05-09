@@ -131,7 +131,7 @@ available, else floats with documented units.
 ## 11.4  Module structure
 
 ```
-cavplasma/
+sonolumen/
 ├── __init__.py
 ├── liquids.py            # LiquidProperties, presets
 ├── drive.py              # AcousticDrive classes
@@ -271,7 +271,7 @@ simulation is small enough to run in seconds on CPU.
 ## 11.8  Recommended high-level API
 
 ```python
-from cavplasma import SimulationConfig, run, presets
+from sonolumen import SimulationConfig, run, presets
 
 cfg = presets.sbsl_canonical()                 # §9 defaults
 result = run(cfg)

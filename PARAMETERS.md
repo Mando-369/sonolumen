@@ -1,6 +1,6 @@
 # Parameter reference
 
-Every parameter exposed in the cavplasma UI, what it does in the
+Every parameter exposed in the sonolumen UI, what it does in the
 model, how it interacts with the other parameters, and meaningful
 values to try.
 
@@ -27,7 +27,7 @@ What kind of cavity the bubble lives in.
 | **Closed sphere** | Standing wave fills the chamber, antinode at centre. Real eigenmode `j₀(kr)`. Chamber Q multiplies the drive at resonance. | SBSL, pistol-shrimp-in-a-flask |
 | **Cylinder axial** | Standing wave along the long axis (`cos(πz/L)`). | Suslick MBSL horns, tube reactors |
 | **Cylinder radial** | Bessel mode `J₀(2.405 r/R)` — pressure pile-up on the axis. | Some sonochemistry rigs |
-| **HIFU focal spot** | Focused beam from a curved/array transducer. cavplasma model: bubble at focal antinode, full drive amplitude, no falloff modelled. | Lithotripsy, histotripsy, tumour ablation |
+| **HIFU focal spot** | Focused beam from a curved/array transducer. sonolumen model: bubble at focal antinode, full drive amplitude, no falloff modelled. | Lithotripsy, histotripsy, tumour ablation |
 | **Open water / pistol-jet** | No cavity. Bubble lives in static `p_∞`. | Pistol shrimp itself, laser cavitation |
 | **Horn / open bath** | Transducer horn dipped into a tank. Same plane-wave treatment as HIFU. | Lab-bench sonochemistry |
 
@@ -60,7 +60,7 @@ during collapse (closer wall sees more shock).
 ### `wall_material`
 
 The wall's catalog name. Maps to a fully-populated `WallMaterial`
-via `cavplasma.material.materials.get(name)` — sets density,
+via `sonolumen.material.materials.get(name)` — sets density,
 Young's modulus, yield strength, dynamic yield, fatigue limit,
 hardness, plus chemical compatibility info.
 
@@ -122,7 +122,7 @@ simulator.
 
 ### `liquid_dropdown`
 
-Five entries in the catalog (`cavplasma.liquids.preset(name)`):
+Five entries in the catalog (`sonolumen.liquids.preset(name)`):
 
 | Liquid | ρ (kg/m³) | c (m/s) | μ (Pa·s) | σ (N/m) | p_v (Pa) |
 |---|---|---|---|---|---|
@@ -467,7 +467,7 @@ disagreement smaller because thermal ionization dominates.
 
 ### Hidden physics options (not in UI)
 
-These live on `PhysicsOptions` in `cavplasma.config` and are
+These live on `PhysicsOptions` in `sonolumen.config` and are
 preset-controlled:
 
 | Option | Default | What it does |
@@ -552,7 +552,7 @@ card itself flags convergence problems.
 | `atol` | 1e-15 (SBSL) | absolute tolerance per step. R values are tiny (1e-6 to 1e-3 m), so atol must be very small. |
 | `n_output` | 10,000 | number of output time points returned. Doesn't affect integration accuracy — only trace-array density. |
 | `output_log_spacing` | True | log-spaced output grid concentrates samples near collapse so the ns flash isn't lost. |
-| `integrator` | `"LSODA"` | adaptive stiff/non-stiff switcher. Alternatives: `"RK45"` (Runge-Kutta), `"Radau"` (implicit, very stiff). Defaults right for cavplasma. |
+| `integrator` | `"LSODA"` | adaptive stiff/non-stiff switcher. Alternatives: `"RK45"` (Runge-Kutta), `"Radau"` (implicit, very stiff). Defaults right for sonolumen. |
 
 ### Practical recipes
 
@@ -678,11 +678,11 @@ find the green stripe.
 
 | What | Where |
 |---|---|
-| `initial_design()` heuristic | `cavplasma/suggestions/inverse_design.py` |
+| `initial_design()` heuristic | `sonolumen/suggestions/inverse_design.py` |
 | `refine_design()` grid search | same file |
-| `_classify_live` predictor | `cavplasma/ui/callbacks.py` |
+| `_classify_live` predictor | `sonolumen/ui/callbacks.py` |
 | `_adapt_partner_slider` Minnaert coupling | same file |
-| `DesignTarget` / `DesignConstraints` | `cavplasma.suggestions` (re-exported) |
+| `DesignTarget` / `DesignConstraints` | `sonolumen.suggestions` (re-exported) |
 
 ---
 
@@ -754,12 +754,12 @@ the corrected `c` shows up in the right-column liquid card.
 
 | You see this in the UI | Maps to |
 |---|---|
-| Wall pressure capability (right column) | `wall_pressure_capability(scenario)` in `cavplasma/ui/callbacks.py` |
+| Wall pressure capability (right column) | `wall_pressure_capability(scenario)` in `sonolumen/ui/callbacks.py` |
 | Liquid properties (right column) | `render_liquid_properties_card(scenario)` |
 | Live status chip | `_classify_live` |
 | Auto-adapt proposal | `_adapt_partner_slider` + Minnaert ratio |
-| R6 off-resonance warning | `_check_off_resonance` in `cavplasma/scenario/scenario.py` |
-| Regime card "why this regime?" | `classify_with_rationale` in `cavplasma/suggestions/regime.py` |
+| R6 off-resonance warning | `_check_off_resonance` in `sonolumen/scenario/scenario.py` |
+| Regime card "why this regime?" | `classify_with_rationale` in `sonolumen/suggestions/regime.py` |
 
 For physics-deep references (Newton-Laplace, Mackenzie, Clausius-
 Clapeyron, etc.), see the research dossier in `cavitation_research/`:

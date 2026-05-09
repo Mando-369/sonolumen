@@ -7,12 +7,12 @@ asked three deep questions:
 2. Does compressing water heat it up?
 3. What happens to the famous 4 °C density anomaly under pressure?
 
-This note answers each, then ties it back to what cavplasma actually
+This note answers each, then ties it back to what sonolumen actually
 models and where the current EOS stops being faithful.
 
 ## TL;DR
 
-| Effect | Magnitude | cavplasma response |
+| Effect | Magnitude | sonolumen response |
 |---|---|---|
 | Adiabatic compression heating (20 °C surface → 1 km depth) | +0.15 K | not modelled (bulk liquid T fixed) |
 | Same to Mariana Trench depth (~110 MPa) | +1.6 K | not modelled |
@@ -65,7 +65,7 @@ So:
   thermohaline circulation.
 
 For *very fast* adiabatic compression — like the 100-ns bubble
-collapse in cavplasma — the gas inside heats by orders of magnitude
+collapse in sonolumen — the gas inside heats by orders of magnitude
 (thousands of K). That's already modelled by the Toegel reduced-ODE
 in `bubble_dynamics.py`. The bulk liquid heating is the *outside*
 effect, which the simulator currently ignores (Q7).
@@ -88,7 +88,7 @@ compressible, and freezes lower. The reason is mostly geometric —
 ions disrupt the open hydrogen-bonded structure of water, packing
 molecules slightly closer.
 
-For cavplasma, the `liquids.preset("seawater")` already encodes the
+For sonolumen, the `liquids.preset("seawater")` already encodes the
 correct ρ, c, μ at surface conditions (`liquids.py` line 19).
 What's *not* encoded: how those scalars change as you sweep p_∞.
 Same gap as §17 Q4.
@@ -189,7 +189,7 @@ The Ice Ih anomaly lives only in the ~ -22 °C to 0 °C wedge below
 >    reaches ~180 MPa, at which point Ice III nucleates instead and
 >    *contracts*. Most pipes give up well before the Ice III line.
 
-## 5. How this maps onto cavplasma
+## 5. How this maps onto sonolumen
 
 What's currently modelled (correctly):
 
